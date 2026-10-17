@@ -20,7 +20,17 @@ Raspberry Pi 的 HAOS 安裝與機型需求請參閱 [Home Assistant 官方教�
 - runtime 映像為 linux/arm64，HA label 為 aarch64，Node.js `process.arch` 為 arm64，版本 metadata 一致。
 - 空白資料 volume 的容器通過 health、未發布主機埠、SIGTERM 正常退出、重啟身份保留，以及沒有 npm／compiler／測試檔的檢查。
 
-CI 另外在 `ubuntu-latest`（amd64）與 `ubuntu-24.04-arm`（ARM64）原生 runner 分別執行測試、建置與容器 smoke。兩者成功後才組合公開多架構 manifest。可在 [Actions](https://github.com/xangin/line-oa-ha-addon/actions) 查看結果。
+CI 另外在 `ubuntu-latest`（amd64）與 `ubuntu-24.04-arm`（ARM64）原生 runner 分別執行測試、建置與容器 smoke。兩者成功後才組合公開多架構 manifest。0.1.5 的 [雙架構 CI](https://github.com/xangin/line-oa-ha-addon/actions/runs/39021750027) 與 [映像發布](https://github.com/xangin/line-oa-ha-addon/actions/runs/39021764199) 均成功。
+
+正式映像發布後，又在同一台 Mac 使用無 GHCR 登入憑證的 Docker client 下載 `:0.1.5`，未指定 `--platform`。Docker 自動選到 linux/arm64／HA label aarch64，下載後的公開映像也通過同一組容器 smoke。
+
+| 公開映像 | SHA-256 digest |
+| --- | --- |
+| 0.1.5 多架構 manifest | `7bde41128df71f541c896c7baeb035377984eedc518d58ddda18769c7619c93e` |
+| linux/arm64/v8 | `ce4b46f11f0e680a5b3ae4a9a6924c2466fd7b95f6e433a545a1eec5329b954f` |
+| linux/amd64 | `f244996ecd9f0e090c56aa2f94e198d56ae87bc981cf464df7e8790b1ccd13e7` |
+
+映像程式碼 revision 為 `0e41f9925579f11ce6a677eb2499eaadf25c209b`；後續驗證紀錄只修改文件，沒有重建或覆寫映像。
 
 **尚未在實體 Raspberry Pi 的 HAOS 上安裝驗證。** 本機容器測試不涵蓋 Raspberry Pi 硬體、HAOS Supervisor／Ingress 整合、實際 LINE 登入或真實收件者傳送；既有 HAOS／amd64 驗證範圍見 [測試紀錄](verification.md)。
 

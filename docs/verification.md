@@ -15,7 +15,7 @@ Node.js 24、TypeScript strict、30 項 Mock 測試，涵蓋：
 
 從 0.1.5 起，Docker build stage 在 linux/amd64 與 linux/arm64 原生 runner 執行全套測試。隔離 smoke 用空資料 volume 驗證 health、沒有公開埠、SIGTERM 正常停止、重啟身份持久化與 runtime 沒有 compiler／npm／測試檔，並核對 Docker／HA label／Node.js 架構及版本一致。
 
-[CI 執行結果](https://github.com/xangin/line-oa-ha-addon/actions)。0.1.3 映像發布與隔離 smoke：[成功執行紀錄](https://github.com/xangin/line-oa-ha-addon/actions/runs/39017811917)。公開文件中的 UI 截圖均使用合成帳號與 Mock LINE，不含正式 Session。
+[CI 執行結果](https://github.com/xangin/line-oa-ha-addon/actions)。0.1.5 的 [雙架構 CI](https://github.com/xangin/line-oa-ha-addon/actions/runs/39021750027) 與 [映像發布](https://github.com/xangin/line-oa-ha-addon/actions/runs/39021764199) 均成功，公開 ARM64 映像另於本機匿名下載並執行 smoke 通過。0.1.3 映像發布與隔離 smoke：[成功執行紀錄](https://github.com/xangin/line-oa-ha-addon/actions/runs/39017811917)。公開文件中的 UI 截圖均使用合成帳號與 Mock LINE，不含正式 Session。
 
 ## 實機驗證與邊界
 

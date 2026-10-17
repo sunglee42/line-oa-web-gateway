@@ -4,7 +4,7 @@
 
 依 [LINE 官方申請頁](https://tw.linebiz.com/account/) 建立帳號，登入 [Official Account Manager](https://manager.line.biz/) 後，在「設定 → 回應設定」啟用「聊天」。讓收件者先加入好友並傳訊，確認官方後台可聊天，再使用本 App。圖文步驟見 [LINE 官方聊天教學](https://tw.linebiz.com/manual/line-official-account/oa-manager-chatting/)。
 
-完整新手教學：[專案 README](https://github.com/xangin/line-oa-ha-addon#readme)。目前只支援 amd64；HACS 整合需另外安裝相容版本。
+完整新手教學：[專案 README](https://github.com/xangin/line-oa-ha-addon#readme)。目前只支援 amd64；**必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。**
 
 ## 啟動與登入
 
@@ -24,15 +24,11 @@
 
 [查看 README 完整教學](https://github.com/xangin/line-oa-ha-addon#4-%E7%99%BB%E5%85%A5-line-%E8%88%87%E8%A8%AD%E5%AE%9A%E6%94%B6%E4%BB%B6%E8%80%85)
 
-## Home Assistant 整合
+## 必要的 HACS 整合
 
-App 會透過 Supervisor Discovery 發布 `line_oa`，API 尚未登入 LINE 也可探索。搭配已實作 hassio config flow 的 HACS 時，至「設定 → 裝置與服務」確認新增即可自動配對。整合需實作配對交換；本 App 不會修改 HA 的 `configuration.yaml` 或現有整合。
+**本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。**
 
-HACS 呼叫 `/api/v1/*` 需 Bearer Key。正式 Key 只經配對交換回傳給 HACS，Web UI 不顯示、不保存到瀏覽器。
-
-## 重新配對／憑證輪替
-
-Ingress「設定 → 重新配對 Home Assistant／輪替憑證」會撤銷舊 Key，建立新的配對窗口。接著在支援配對的 HACS 重新驗證。這與 LINE QR 登入互相獨立。若交換回應遺失，先重新授權，再重新驗證；不要重用舊 Token。
+HACS 安裝、配對、重新驗證、Actions 與自動化操作，請直接參閱 **[HACS repo 的完整說明](https://github.com/xangin/line-oa-hacs#readme)**。
 
 ## 資料與更新
 
@@ -41,7 +37,7 @@ Session、別名、身份與憑證雜湊位於 App 私有 `/data`，更新映像
 ## 故障排除
 
 - Ingress 403：只允許 Supervisor 代理，請從 HA「開啟 Web UI」進入，不能直接用 IP:8099。
-- API 401：Key 未配對或已撤銷；檢查「設定」配對狀態。
+- HACS 配對、API 認證或 Actions 問題：請參閱 [HACS repo](https://github.com/xangin/line-oa-hacs#readme)。
 - Discovery retrying：Supervisor 暫時不可用，App 會重試，不會清除 LINE Session。
 - 登入 auth_required／expired：在 Web UI 重新登入 LINE，不需要重配 API。
 - UNKNOWN：結果不明，不要自動重送。

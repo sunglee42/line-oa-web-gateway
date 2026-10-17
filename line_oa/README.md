@@ -6,4 +6,6 @@
 
 [完整入門與 LINE 官方教學連結](https://github.com/xangin/line-oa-ha-addon#readme)。安裝後閱讀 **Documentation**，由「開啟 Web UI」登入與設定別名。
 
-Home Assistant 自動化另需相容 LINE OA 整合；本 App 不會自行建立 Actions，也不包含 HACS 整合。沒有對外開放 TCP 埠。備份保留必要設定與登入資料，還原時從公開 GHCR 下載對應版本映像。
+**本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。** HACS 安裝、配對、Actions 與自動化細節，請直接參閱 [HACS repo 的說明](https://github.com/xangin/line-oa-hacs#readme)。
+
+沒有對外開放 TCP 埠。備份保留必要設定與登入資料，還原時從公開 GHCR 下載對應版本映像。

@@ -2,12 +2,12 @@
 
 # LINE OA — Home Assistant Add-on
 
-透過 LINE 官方帳號傳送 Home Assistant 文字、圖片與攝影機快照通知。使用 Home Assistant 的 Web UI 完成 LINE 登入，為收件者設定別名，再由相容整合呼叫通知。
+透過 LINE 官方帳號傳送 Home Assistant 文字、圖片與攝影機快照通知。使用 Home Assistant 的 Web UI 完成 LINE 登入，為收件者設定別名，搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)完成通知。
 
 [![Test and build](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml/badge.svg)](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml)
 [![Release](https://img.shields.io/github/v/release/xangin/line-oa-ha-addon)](https://github.com/xangin/line-oa-ha-addon/releases)
 
-> **非官方 LINE 專案。** 本專案使用 LINE 官方帳號管理後台的未公開聊天介面，並非 LINE Messaging API，也未獲 LINE 背書。LINE 服務變更或登入限制可能影響使用；請遵守 LINE 使用規範，不適合大量群發或必須保證送達的緊急通知。這裡提供的是 Add-on；Home Assistant Actions 另需相容的 LINE OA 整合。
+> **非官方 LINE 專案。** 本專案使用 LINE 官方帳號管理後台的未公開聊天介面，並非 LINE Messaging API，也未獲 LINE 背書。LINE 服務變更或登入限制可能影響使用；請遵守 LINE 使用規範，不適合大量群發或必須保證送達的緊急通知。**使用本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)。**
 
 ## 功能與需求
 
@@ -24,7 +24,7 @@
 | 架構 | **amd64（x86-64）**；目前沒有 aarch64／Raspberry Pi ARM 映像 |
 | LINE | 手機 LINE，以及可登入、管理該官方帳號的 LINE 帳號 |
 | 網路 | HA 可連線 LINE、GitHub 與 GHCR；還原映像也需要網路 |
-| 通知自動化 | 另裝支援本專案 API v1／Supervisor 配對的 LINE OA 整合 |
+| 必要整合 | **[LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)** |
 
 僅有 Home Assistant Container／Core、沒有 Supervisor 的環境不能安裝本 Add-on。也不需要為本 Add-on 另外建立 Messaging API Channel、Channel Access Token 或公開 Webhook URL。
 
@@ -88,42 +88,11 @@
 
 「登出 LINE」清除此 Add-on 保存的登入資料與聯絡人快取，保留別名與 HA 配對；之後需重新登入。切換官方帳號後，請重新核對收件者與別名。
 
-## 5. Home Assistant 通知整合
+## 5. 必須搭配 LINE OA HACS 整合
 
-**本儲存庫不包含 HACS 整合，也不會自行建立 `line_oa.*` Actions。** Add-on 的 Web UI 可以獨立登入及測試發送；自動化必須搭配實作 API v1 與 Supervisor Discovery／配對交換的 LINE OA 整合。目前此處沒有提供已驗證的公開 HACS 下載位置，請勿將本 Add-on 儲存庫當成 HACS Integration 加入。
+**本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。**
 
-使用相容整合時：
-
-1. 依該整合的說明安裝並載入。
-2. 在「設定 → 裝置與服務」確認探索到的 LINE OA，再完成配對。
-3. Add-on「設定」應顯示已配對；可在整合建立的 Actions 中使用收件者別名。
-
-已經連到其他 Gateway／LXC 的整合不會被 Add-on 自動覆寫。若整合沒有自動探索／配對能力，單獨安裝本 Add-on 不會補足這項能力。[整合端介接契約](docs/secure-pairing.md)。
-
-下列範例需要相容整合提供對應 Action：
-
-```yaml
-action: line_oa.send_text
-data:
-  who: home
-  message: "洗衣機已完成"
-```
-
-```yaml
-action: line_oa.send_image
-data:
-  who: home
-  image_path: "/media/test.jpg"
-```
-
-```yaml
-action: line_oa.send_screen_shot
-data:
-  who: home
-  camera_entity: camera.front_door
-```
-
-圖片／攝影機 Action 不接受 `message`，需附文字請另呼叫 `send_text`。`image_path` 是 **HA Core 可讀取的路徑**；Core 讀取圖片後上傳，Add-on 不會直接讀取 Core 的檔案。結果為 **UNKNOWN** 時代表送出結果不明，請先核對 LINE，避免重複通知。
+HACS 安裝、配對、Home Assistant Actions 與自動化使用方式，請直接參閱 **[HACS repo 的完整說明](https://github.com/xangin/line-oa-hacs#readme)**。
 
 ## 備份、還原與更新
 
@@ -148,7 +117,7 @@ data:
 | `WEB_UI_CSRF_TOKEN_*` | 頁面驗證已失效；重新整理 Add-on 頁面再操作，遭拒的操作尚未執行 |
 | `LINE_HTTP_403_CSRF_OR_PERMISSION_DENIED` | 展開失敗紀錄，檢查 LINE 回應與帳號權限，必要時重新登入 |
 | `LOGIN_BUSINESS_CSRF_MISSING` | LINE 登入頁與預期格式不同；查看遮蔽後的回應，提供版本與錯誤名稱回報 |
-| App 已連線但 HA 沒有 Actions | 確認已安裝並載入相容 LINE OA 整合 |
+| Home Assistant 整合或 Actions 問題 | 請參閱 [HACS repo 的說明](https://github.com/xangin/line-oa-hacs#readme) |
 | `UNKNOWN` | 不自動重送，先確認 LINE 是否已收到 |
 
 日誌依 HA 提供的當地時區顯示；「紀錄」可以展開失敗系統回應。憑證會遮蔽，但內容仍可能包含帳號或對象資訊，公開回報前請自行檢查。

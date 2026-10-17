@@ -1,5 +1,7 @@
 # 操作文件
 
+**本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。** HACS 安裝、配對及通知操作請直接參閱該 repo。
+
 - [LINE 帳號申請與聊天開通](README.md#1-申請-line-官方帳號)：LINE 官方教學與完整入門。
 - [備份與還原](docs/backups.md)：必要資料、排除項目、映像重新下載與實測。
 - [安裝與更新](docs/installation.md)：商店安裝、Ingress、更新與開發安裝。

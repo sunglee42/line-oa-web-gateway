@@ -12,9 +12,9 @@
 
 正式版從 `ghcr.io/xangin/line-oa-ha-addon:<版本>` 下載映像，不在 HA 主機下載 npm 開發相依或編譯。Web UI 經 HA Ingress；不要開放 8099／8787 到 LAN，不需關閉保護模式。
 
-## 自動化整合
+## 必須搭配的 HACS 整合
 
-本 Repository 是 App Store 儲存庫，不是 HACS Integration 儲存庫。使用相容的 LINE OA 整合時，在「設定 → 裝置與服務」確認探索並配對。App 不會覆寫原本手動連接其他 Gateway 的 Config Entry。介接細節見 [配對契約](secure-pairing.md)。
+**本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。** HACS 安裝、配對與通知使用方式請直接看 [HACS repo 的完整說明](https://github.com/xangin/line-oa-hacs#readme)。
 
 ## 更新、還原與移除
 

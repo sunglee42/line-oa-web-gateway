@@ -1,0 +1,19 @@
+{
+  "name": "line-oa-ha-addon",
+  "version": "0.1.2",
+  "private": true,
+  "description": "\u8f15\u91cf\u5316 LINE Official Account \u804a\u5929\u901a\u77e5 Gateway",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "npm run build && node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=24 <27"
+  }
+}

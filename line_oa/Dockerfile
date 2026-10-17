@@ -10,7 +10,7 @@ COPY app/web ./web
 RUN npm test
 
 FROM node:24-bookworm-slim AS runtime
-ARG BUILD_VERSION=0.1.3
+ARG BUILD_VERSION=0.1.4
 ARG BUILD_ARCH=amd64
 LABEL org.opencontainers.image.licenses="MIT" \
       io.hass.name="LINE OA" \

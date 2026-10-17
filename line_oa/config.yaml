@@ -1,5 +1,5 @@
 name: LINE OA
-version: "0.1.3"
+version: "0.1.4"
 slug: line_oa
 url: https://github.com/xangin/line-oa-ha-addon
 image: ghcr.io/xangin/line-oa-ha-addon
@@ -8,7 +8,7 @@ arch:
   - amd64
 startup: application
 boot: auto
-stage: experimental
+stage: stable
 init: false
 timeout: 30
 ingress: true

@@ -7,7 +7,7 @@
 [![Test and build](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml/badge.svg)](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml)
 [![Release](https://img.shields.io/github/v/release/xangin/line-oa-ha-addon)](https://github.com/xangin/line-oa-ha-addon/releases)
 
-> **實驗版本／非官方 LINE 專案。** 本專案使用 LINE 官方帳號管理後台的未公開聊天介面，並非 LINE Messaging API，也未獲 LINE 背書。LINE 服務變更或登入限制可能影響使用；請遵守 LINE 使用規範，不適合大量群發或必須保證送達的緊急通知。這裡提供的是 Add-on；Home Assistant Actions 另需相容的 LINE OA 整合。
+> **非官方 LINE 專案。** 本專案使用 LINE 官方帳號管理後台的未公開聊天介面，並非 LINE Messaging API，也未獲 LINE 背書。LINE 服務變更或登入限制可能影響使用；請遵守 LINE 使用規範，不適合大量群發或必須保證送達的緊急通知。這裡提供的是 Add-on；Home Assistant Actions 另需相容的 LINE OA 整合。
 
 ## 功能與需求
 

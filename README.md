@@ -21,7 +21,7 @@
 | 需求 | 說明 |
 | --- | --- |
 | Home Assistant | 有 Supervisor／App Store 的安裝；一般建議 Home Assistant OS |
-| 架構 | **amd64（x86-64）**；目前沒有 aarch64／Raspberry Pi ARM 映像 |
+| 架構 | **amd64（x86-64）及 aarch64（ARM64）**；Raspberry Pi 需安裝 64 位元 HAOS，32 位元 ARM 不支援 |
 | LINE | 手機 LINE，以及可登入、管理該官方帳號的 LINE 帳號 |
 | 網路 | HA 可連線 LINE、GitHub 與 GHCR；還原映像也需要網路 |
 | 必要整合 | **[LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)** |
@@ -94,6 +94,12 @@
 
 HACS 安裝、配對、Home Assistant Actions 與自動化使用方式，請直接參閱 **[HACS repo 的完整說明](https://github.com/xangin/line-oa-hacs#readme)**。
 
+## ARM64／Raspberry Pi
+
+從 **0.1.5** 起，商店提供 amd64 與 aarch64，使用同一個 GHCR 版本；Docker 會依主機選擇對應映像。Raspberry Pi 請使用 **64 位元的 Home Assistant OS**，不能以 32 位元 ARM 系統安裝 aarch64 映像。
+
+發布前會在 amd64 與 ARM64 原生 Linux runner 分別執行測試與容器 smoke，再組合多架構映像。ARM64 另以 Apple Silicon Mac 的 ARM64 Linux VM 驗證；此項測試不等於已在實體 Raspberry Pi 的 HAOS 做安裝測試。[架構與驗證範圍](docs/architectures.md)。
+
 ## 備份、還原與更新
 
 - 在 Home Assistant 系統備份中包含 **LINE OA**。備份保存登入 Session、別名、永久身份、配對憑證雜湊及 App 設定。
@@ -109,7 +115,7 @@ HACS 安裝、配對、Home Assistant Actions 與自動化使用方式，請直�
 
 | 情況 | 先檢查 |
 | --- | --- |
-| 商店看不到 Add-on | 確認已加入本儲存庫、重新整理商店，且主機為 amd64 |
+| 商店看不到 Add-on | 確認已加入本儲存庫、重新整理商店，且主機為 amd64 或 aarch64 |
 | 安裝／還原下載失敗 | 確認 HA 可連線 `ghcr.io` 及 GitHub，查看 App／Supervisor 日誌 |
 | 無法登入／沒有帳號可選 | 確認手機使用的 LINE 帳號具有官方帳號管理權限，且官方網站可正常登入 |
 | 找不到聯絡人 | 啟用聊天、讓對方先傳訊，在官方後台確認對話，再按 Add-on「重新整理」 |
@@ -132,7 +138,7 @@ HACS 安裝、配對、Home Assistant Actions 與自動化使用方式，請直�
 npm --prefix line_oa/app ci --ignore-scripts --no-audit --no-fund
 npm --prefix line_oa/app test
 python3 scripts/check-backup-policy.py
-docker build --platform linux/amd64 -t line-oa:test line_oa
+python3 scripts/build-local-image.py
 python3 scripts/container-smoke.py
 ```
 

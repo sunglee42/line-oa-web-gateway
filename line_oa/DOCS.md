@@ -4,7 +4,7 @@
 
 依 [LINE 官方申請頁](https://tw.linebiz.com/account/) 建立帳號，登入 [Official Account Manager](https://manager.line.biz/) 後，在「設定 → 回應設定」啟用「聊天」。讓收件者先加入好友並傳訊，確認官方後台可聊天，再使用本 App。圖文步驟見 [LINE 官方聊天教學](https://tw.linebiz.com/manual/line-official-account/oa-manager-chatting/)。
 
-完整新手教學：[專案 README](https://github.com/xangin/line-oa-ha-addon#readme)。目前只支援 amd64；**必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。**
+完整新手教學：[專案 README](https://github.com/xangin/line-oa-ha-addon#readme)。支援 amd64 與 aarch64（Raspberry Pi 需使用 64 位元 HAOS）；**必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)使用。**
 
 ## 啟動與登入
 

@@ -1,3 +1,10 @@
+# 0.1.5
+
+- 新增 aarch64（ARM64）支援，Raspberry Pi 可搭配 64 位元 HAOS 使用。
+- amd64／aarch64 分別原生建置、執行完整 Mock 測試與 smoke，再發布單一多架構版本。
+- 驗證映像架構、HA label、Node runtime 架構一致；錯誤標籤拒絕建置。
+- 新增依本機 Docker engine 架構建置的工具與驗證說明。
+
 # 0.1.4
 
 - 移除 Add-on 商店的「實驗性」標籤。

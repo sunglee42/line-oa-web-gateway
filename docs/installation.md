@@ -2,7 +2,7 @@
 
 ## 一般使用者
 
-需要有 Supervisor／App Store 的 Home Assistant（建議 HAOS）及 amd64 主機。ARM 架構目前不支援。
+需要有 Supervisor／App Store 的 Home Assistant（建議 HAOS），架構為 amd64 或 aarch64。Raspberry Pi 需安裝 64 位元 HAOS；32 位元 ARM 不支援。版本 0.1.5 起提供兩種架構。
 
 1. 先依 [README](../README.md) 申請 LINE 官方帳號、啟用聊天、建立收件者對話。
 2. 商店 → 儲存庫加入 `https://github.com/xangin/line-oa-ha-addon`。

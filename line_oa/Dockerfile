@@ -10,8 +10,11 @@ COPY app/web ./web
 RUN npm test
 
 FROM node:24-bookworm-slim AS runtime
-ARG BUILD_VERSION=0.1.4
+ARG BUILD_VERSION=0.1.5
+ARG TARGETARCH
 ARG BUILD_ARCH=amd64
+# Docker uses arm64; Home Assistant uses aarch64. Reject a mislabeled image.
+RUN case "${TARGETARCH}:${BUILD_ARCH}" in amd64:amd64|arm64:aarch64) ;; *) echo "BUILD_ARCH must match TARGETARCH (amd64 or aarch64)" >&2; exit 1 ;; esac
 LABEL org.opencontainers.image.licenses="MIT" \
       io.hass.name="LINE OA" \
       io.hass.description="LINE OA Gateway with Ingress and secure Home Assistant pairing" \

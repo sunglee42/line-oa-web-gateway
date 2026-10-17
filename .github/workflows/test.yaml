@@ -4,9 +4,20 @@ permissions:
   contents: read
 jobs:
   gateway:
-    runs-on: ubuntu-latest
+    name: Test ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -18,5 +29,12 @@ jobs:
         working-directory: line_oa/app
       - run: python3 scripts/check-backup-policy.py
       - run: python3 scripts/check-publication.py
-      - run: docker build --platform linux/amd64 -t line-oa:test line_oa
-      - run: python3 scripts/container-smoke.py
+      - name: Build native image
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          HA_ARCH: ${{ matrix.arch }}
+        run: docker build --provenance=false --platform "$PLATFORM" --build-arg "BUILD_ARCH=$HA_ARCH" -t line-oa:test line_oa
+      - name: Test native runtime
+        env:
+          HA_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/container-smoke.py --arch "$HA_ARCH"

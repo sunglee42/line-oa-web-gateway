@@ -1,11 +1,12 @@
 name: LINE OA
-version: "0.1.4"
+version: "0.1.5"
 slug: line_oa
 url: https://github.com/xangin/line-oa-ha-addon
 image: ghcr.io/xangin/line-oa-ha-addon
 description: LINE OA Gateway with Ingress and secure Home Assistant pairing
 arch:
   - amd64
+  - aarch64
 startup: application
 boot: auto
 stage: stable

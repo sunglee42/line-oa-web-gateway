@@ -15,10 +15,10 @@ Node.js 24、TypeScript strict、30 項 Mock 測試，涵蓋：
 
 Docker build stage 在 linux/amd64 執行全套測試。隔離 smoke 用空資料 volume 驗證 health、沒有公開埠、SIGTERM 正常停止、重啟身份持久化與 runtime 沒有 compiler／npm／測試檔。
 
-[CI 執行結果](https://github.com/xangin/line-oa-ha-addon/actions)。公開文件中的 UI 截圖均使用合成帳號與 Mock LINE，不含正式 Session。
+[CI 執行結果](https://github.com/xangin/line-oa-ha-addon/actions)。0.1.3 映像發布與隔離 smoke：[成功執行紀錄](https://github.com/xangin/line-oa-ha-addon/actions/runs/39017811917)。公開文件中的 UI 截圖均使用合成帳號與 Mock LINE，不含正式 Session。
 
 ## 實機驗證與邊界
 
-已在 HAOS／amd64 驗證安裝、啟動、HA→Supervisor→Ingress 資源、探索、配對狀態、更新保留私有資料、當地時區與健康檢查。正式備份縮小的實測結果於發布後補充。
+已在 HAOS／amd64 驗證安裝、啟動、HA→Supervisor→Ingress 資源、探索、配對狀態、更新保留私有資料、當地時區與健康檢查。0.1.3 實際 App-only 備份由約 86.55 MiB 降為 10 KiB，驗證無 image.tar、暫存排除、必要資料保留，並確認公開映像可匿名下載。詳見 [備份實測](backups.md)。
 
 沒有透過自動測試向真實 LINE 收件者發訊，也沒有在使用中的 HA 執行覆寫式還原。未宣告支援 aarch64、長期低於固定記憶體上限、永不失效的 LINE Session 或保證送達。應用介面與 LINE 上游相容性需持續維護。

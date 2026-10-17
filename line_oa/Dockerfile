@@ -10,9 +10,10 @@ COPY app/web ./web
 RUN npm test
 
 FROM node:24-bookworm-slim AS runtime
-ARG BUILD_VERSION=0.1.2
+ARG BUILD_VERSION=0.1.3
 ARG BUILD_ARCH=amd64
-LABEL io.hass.name="LINE OA" \
+LABEL org.opencontainers.image.licenses="MIT" \
+      io.hass.name="LINE OA" \
       io.hass.description="LINE OA Gateway with Ingress and secure Home Assistant pairing" \
       io.hass.type="app" \
       io.hass.version="${BUILD_VERSION}" \
@@ -23,6 +24,7 @@ WORKDIR /app
 COPY --from=build /build/dist/src ./dist/src
 COPY app/web ./web
 COPY app/package.json ./package.json
+COPY LICENSE ./LICENSE
 # Runtime has one Node process; npm/compiler are not needed.
 RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 EXPOSE 8099 8787

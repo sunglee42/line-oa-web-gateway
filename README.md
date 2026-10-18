@@ -2,12 +2,16 @@
 
 # LINE OA — Home Assistant Add-on
 
+> ⚠️ **非官方使用警語**
+>
+> 本專案採非官方方式使用 LINE 服務，使用風險由使用者自行承擔。若因此造成帳號異常、限制、停權或其他損失，開發者不負相關責任。
+
 透過 LINE 官方帳號傳送 Home Assistant 文字、圖片與攝影機快照通知。使用 Home Assistant 的 Web UI 完成 LINE 登入，為收件者設定別名，搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)完成通知。
 
 [![Test and build](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml/badge.svg)](https://github.com/xangin/line-oa-ha-addon/actions/workflows/test.yaml)
 [![Release](https://img.shields.io/github/v/release/xangin/line-oa-ha-addon)](https://github.com/xangin/line-oa-ha-addon/releases)
 
-> **非官方 LINE 專案。** 本專案使用 LINE 官方帳號管理後台的未公開聊天介面，並非 LINE Messaging API，也未獲 LINE 背書。LINE 服務變更或登入限制可能影響使用；請遵守 LINE 使用規範，不適合大量群發或必須保證送達的緊急通知。**使用本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)。**
+> **使用本 Add-on 必須搭配 [LINE OA HACS 整合](https://github.com/xangin/line-oa-hacs)。**
 
 ## 功能與需求
 
@@ -15,7 +19,7 @@
 - 聯絡人查詢、重新整理與收件者別名白名單。
 - 文字、單張 JPEG／PNG 圖片（最大 10 MiB）及供整合呼叫的 HTTP API v1。
 - Home Assistant Ingress 管理介面、自動探索與一次性配對交換。
-- 依發送後閒置時間安排隨機延遲的 LINE Session 驗證；當地時區日誌、失敗回應詳情與憑證遮蔽。
+- 當地時區日誌、失敗回應詳情與憑證遮蔽。
 - 預建映像安裝；備份保存設定與登入資料，還原時重新下載映像，排除暫存、快取與日誌。
 
 | 需求 | 說明 |
@@ -87,23 +91,6 @@
 `who` 使用 `home` 這類別名，不填 LINE ID、電話號碼或 Messaging API User ID。
 
 「登出 LINE」清除此 Add-on 保存的登入資料與聯絡人快取，保留別名與 HA 配對；之後需重新登入。切換官方帳號後，請重新核對收件者與別名。
-
-### LINE 登入通知中的裝置資訊
-
-Add-on 依執行架構使用固定的桌面網頁識別：**amd64（x86-64）使用 Windows Chrome**，**aarch64（ARM64／Raspberry Pi）使用 macOS Chrome**。QR 登入與之後的 CSRF 更新、聯絡人查詢、文字及圖片請求使用相同 User-Agent；不會隨每次請求隨機切換。這是通訊用的瀏覽器識別，Add-on 本身仍在 Linux／Node.js 執行，沒有啟動 Chrome。
-
-登入仍經過 LINE 官方的 `chat.line.biz` → `account.line.biz` → `access.line.me` 流程；Origin／Referer 依實際請求步驟設定。**LINE 登入通知與紀錄的裝置名稱及「來自」文字由 LINE 判定**，無法保證顯示成「Windows PC」、「Mac」或指定網址，也不會修改既有登入紀錄。依 [LINE 官方說明](https://help2.line.me/business_id/web?lang=en)，無法辨識的裝置仍可能顯示 Unknown。macOS 的 User-Agent 使用 Chromium 官方定義的固定平台字串，即使 ARM64 也包含 `Intel Mac OS X 10_15_7`；參閱 [Chromium 說明](https://www.chromium.org/updates/ua-reduction/)。
-
-### 閒置時驗證登入狀態
-
-背景驗證採用 **30 分鐘 + 每次隨機 0～30 分鐘** 的單次延遲，不再啟動後立即驗證或固定每 5 分鐘查詢。
-
-- 每次文字或圖片實際交給 LINE 發送後，取消原本的背景檢查，從該次發送結束起重新抽取 **30～60 分鐘** 的等待時間。發送結果不明也重新計時；別名錯誤、重複請求等在本機被拒絕的請求不重設。
-- 等待期間再次發送，重新計時，因此持續發送時不插入背景驗證。發送前仍立即驗證 Session；「手動測試連線」也維持立即執行。
-- 啟動後尚未發送過時，從服務啟動起等待 30～60 分鐘。重啟後重新計時，不將排程寫入備份。
-- 持續沒有發送時，完成一次背景驗證後，再重新抽取下一次的 30～60 分鐘；遇到發送忙碌則略過本次。沒有登入資料或已確認過期時，不向 LINE 發出背景驗證請求。
-
-驗證會更新 CSRF，再以唯讀請求確認 Session；網路中斷、CSRF／權限錯誤與登入失效分別回報。這不是換發登入 Session，失效後仍需掃碼。背景發現失效的時間會隨閒置排程延後；若要立即確認，可按「手動測試連線」。HA 讀取狀態只讀取記憶體，不會因輪詢而觸發 LINE 驗證。HA 提醒功能請參閱 [HACS repo](https://github.com/xangin/line-oa-hacs#readme)。
 
 ## 5. 必須搭配 LINE OA HACS 整合
 

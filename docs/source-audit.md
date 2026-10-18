@@ -36,4 +36,4 @@
 
 HACS 為獨立專案，本儲存庫不包含或部署其整合程式。
 
-0.1.6 新增 `session-monitor.ts` 背景健康檢查，`line-client.ts` 共用同一 Session 進行中的驗證；`session.ts`／狀態 API 增加登入原因，沒有新增登入續期端點，也未修改原 LXC。
+0.1.6 的狀態 API 增加登入原因。

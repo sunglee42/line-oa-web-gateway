@@ -12,7 +12,7 @@
 
 ## 沿用核心與 0.1.1 差異
 
-`src/images.ts`、`multipart.ts`與原LXC逐位元相同。0.1.1 在 `line-client.ts` 增加失敗回應診斷與登入狀態變更檢查；`qr-login.ts` 增加失敗詳情與取消檢查；`session.ts` 增加本機登出、原子清除與競態防護；`sender.ts` 只新增忙碌狀態查詢。LINE登入端點、帳號選擇、文字textV2、圖片uploadFile/bulkSendFiles、Session格式與UNKNOWN不重送皆沿用。登出只清除本Add-on的Session，不呼叫LINE全域登出。
+0.1.1 時 `src/images.ts`、`multipart.ts` 與原 LXC 逐位元相同。目前未發布的安全修正擴充 `images.ts`，將容量檢查與寫入序列化並清理失敗寫入，`multipart.ts` 仍與原檔相同。0.1.1 在 `line-client.ts` 增加失敗回應診斷與登入狀態變更檢查；`qr-login.ts` 增加失敗詳情與取消檢查；`session.ts` 增加本機登出、原子清除與競態防護；`sender.ts` 只新增忙碌狀態查詢。LINE登入端點、帳號選擇、文字textV2、圖片uploadFile/bulkSendFiles、Session格式與UNKNOWN不重送皆沿用。登出只清除本Add-on的Session，不呼叫LINE全域登出。
 
 ## App必要差異
 
@@ -21,7 +21,9 @@
 - `config.ts`：DATA_DIR=/data、固定容器listener、永久身份損壞fail closed。
 - `auth.ts`：憑證損壞fail closed、可指定cookie scope、CSRF byte-length檢查。
 - `storage.ts`：讀取既有檔強制0600、寫入後fsync目錄。
-- `contacts.ts`：只保存別名，搜尋快照留RAM，舊格式別名仍可遷移。
+- `contacts.ts`：只保存別名，搜尋快照留 RAM，舊格式別名仍可遷移；目前未發布修正改用 Map，避免特殊鍵透過原型繼承繞過撤銷。
+- `images.ts`：目前未發布修正序列化容量檢查與寫入，容量不明時拒絕，寫入失敗清除部分檔案。
+- `qr-login.ts`：目前未發布修正將上游回應改為串流限量讀取，避免先讀入整份過大回應。
 - `api-v1.ts`：在health/status新增api_version=1，既有欄位保留。
 - `web`：相對路徑、移除Key顯示、配對狀態與重配、允許重新登入／切換帳號。
 - 上游測試有一處Buffer/string型別錯誤及過期的Session狀態期待值，僅在複本修正。
@@ -30,7 +32,7 @@
 
 ## 日後同步
 
-`docs/upstream-sha256.json`記錄原檔案checksum。執行`python3 scripts/verify-source.py <原Gateway路徑>`可驗證原專案未被修改，以及圖片與multipart模組仍一致；其餘擴充模組需人工比對上述差異。同步上游修補時人工比對差異、重新跑Mock測試，不整個覆蓋App server/config/auth。更新checksum前應記錄基礎版本與安全影響。
+`docs/upstream-sha256.json`記錄原檔案checksum。執行`python3 scripts/verify-source.py <原Gateway路徑>`可驗證原專案未被修改，以及 multipart 模組仍一致；圖片模組已為上述安全修正擴充，其餘擴充模組需人工比對上述差異及執行回歸測試。同步上游修補時人工比對差異、重新跑Mock測試，不整個覆蓋App server/config/auth。更新checksum前應記錄基礎版本與安全影響。
 
 HACS 為獨立專案，本儲存庫不包含或部署其整合程式。
 

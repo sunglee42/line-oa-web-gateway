@@ -13,7 +13,8 @@ export class MessageSender {
   public lastSubmittedAt?: string;
 
   constructor(private readonly client: LineClient, private readonly sessions: SessionManager, private readonly contacts: ContactService,
-    private readonly logger: MemoryLogger, private readonly duplicateWindowMs: number, private readonly rateLimit: number) {}
+    private readonly logger: MemoryLogger, private readonly duplicateWindowMs: number, private readonly rateLimit: number,
+    private readonly onMessageSent: () => void = () => {}) {}
 
   isBusy(): boolean { return this.active; }
 
@@ -53,6 +54,7 @@ export class MessageSender {
       else if (result.error === 'CSRF') this.sessions.mark('ERROR', 'CSRF 驗證失敗，已停止發送');
       else if (result.error === 'RATE_LIMIT') this.sessions.mark('ERROR', 'LINE 回報速率限制，已停止發送');
       this.logger.add('SEND_TEXT', result.result, alias, result.error);
+      this.onMessageSent();
       return result;
     } finally { this.active = false; }
   }
@@ -92,6 +94,7 @@ export class MessageSender {
       else if (result.error === 'CSRF') this.sessions.mark('ERROR', 'CSRF 驗證失敗，已停止發送');
       else if (result.error === 'RATE_LIMIT') this.sessions.mark('ERROR', 'LINE 回報速率限制，已停止發送');
       this.logger.add('SEND_IMAGE', result.result, alias, result.error);
+      this.onMessageSent();
       return result;
     } finally { this.active = false; }
   }

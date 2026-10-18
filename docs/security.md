@@ -14,6 +14,9 @@
 | Key 洩漏／舊 Key | Gateway 只存雜湊，前端不取得 Key，重新配對即撤銷舊 Key |
 | Session／身份損壞 | 原子 JSON 寫入，檔案權限0600；無效 config／憑證 fail closed |
 | 秘密進入日誌 | 只在失敗時記錄上游回應與診斷；遞迴遮蔽敏感欄位、Cookie、Token、Key、PIN、HTML input value、URL query 與已知憑證值。不記錄請求 Body 或請求 Headers；完整回應僅限管理 Ingress 與 App 日誌。 |
+| 別名原型繼承 | 別名使用 Map，只查找明確儲存的鍵；`__proto__` 可作普通別名，撤銷後不會回退到物件原型，JSON 與舊格式遷移仍相容 |
+| 暫存容量競態 | 同一 Gateway 的容量檢查與圖片寫入序列化，總量不超過設定值（預設 20 MiB）；容量不明時拒絕寫入，寫入失敗清除部分檔案 |
+| QR 回應耗用 | 逐塊計算已解碼回應大小，上限 2 MiB；宣告或實際大小超限時取消讀取與請求，不先完整緩衝過大回應 |
 | 重複訊息 | 沿用去重、頻率限制、single-flight，UNKNOWN 不自動重送 |
 
 ## Ingress 與瀏覽器

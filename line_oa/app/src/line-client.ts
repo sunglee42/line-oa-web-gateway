@@ -3,6 +3,7 @@ import { diagnosticText, networkDetails } from './diagnostics.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Contact, SendResult, SessionCredentials } from './types.js';
 import { SessionManager } from './session.js';
+import { LINE_USER_AGENT } from './line-browser.js';
 
 type RawResponse = { status: number; body: unknown; contentType: string; details?: string; headers?: Record<string, unknown> };
 export type RequestFn = (method: string, path: string, headers: Record<string, string>, body?: string | Buffer) => Promise<RawResponse>;
@@ -84,7 +85,7 @@ export class LineClient {
   private headers(credentials: SessionCredentials): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'User-Agent': 'line-oa-gateway/0.1 Node.js',
+      'User-Agent': LINE_USER_AGENT,
       Cookie: credentials.cookies.map(c => `${c.name}=${c.value}`).join('; '),
       Origin: 'https://chat.line.biz',
       Referer: 'https://chat.line.biz/'

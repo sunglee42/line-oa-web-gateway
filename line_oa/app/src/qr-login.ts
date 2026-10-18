@@ -3,15 +3,16 @@ import { isIP } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import type { SessionCredentials } from './types.js';
 import { SessionManager } from './session.js';
+import { LINE_USER_AGENT } from './line-browser.js';
 
 const ALLOWED_HOSTS = new Set(['chat.line.biz', 'account.line.biz', 'access.line.me']);
 const START_URL = 'https://chat.line.biz/';
 const ACCESS_ORIGIN = 'https://access.line.me';
 const QR_LIFETIME_MS = 4 * 60_000;
 const TERMINAL_STATE_MS = 60_000;
+const MAX_LOGIN_RESPONSE_BYTES = 2 * 1024 * 1024;
 // LINE Business ID serves a reduced non-interactive page to generic HTTP clients.
-// This identifies the protocol client as a desktop Chromium-class web client; no browser process is started.
-const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+// The shared desktop web identity is also used after login; no browser is started.
 
 export type QrLoginStatus = 'idle' | 'starting' | 'qr' | 'pin' | 'finalizing' | 'selecting' | 'ok' | 'error';
 export interface PublicLoginChoice { id: string; label: string }
@@ -449,7 +450,7 @@ export class BusinessQrLogin {
     this.assertActive(flow);
     this.validateUrl(url);
     const cookie = flow.jar.header(url);
-    const headers: Record<string, string> = { Accept: '*/*', 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.7', 'User-Agent': USER_AGENT, ...(init.headers ?? {}) };
+    const headers: Record<string, string> = { Accept: '*/*', 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.7', 'User-Agent': LINE_USER_AGENT, ...(init.headers ?? {}) };
     if (cookie) headers.Cookie = cookie;
     const requestController = new AbortController();
     const cancelRequest = () => requestController.abort();
@@ -460,9 +461,35 @@ export class BusinessQrLogin {
       this.assertActive(flow);
       flow.jar.setFromHeaders(url, response.headers);
       const length = Number(response.headers.get('content-length') ?? '0');
-      if (length > 2 * 1024 * 1024) throw new Error('LOGIN_RESPONSE_TOO_LARGE');
-      const body = Buffer.from(await response.arrayBuffer());
-      if (body.length > 2 * 1024 * 1024) throw new Error('LOGIN_RESPONSE_TOO_LARGE');
+      if (length > MAX_LOGIN_RESPONSE_BYTES) {
+        requestController.abort();
+        void response.body?.cancel().catch(() => undefined);
+        throw new Error('LOGIN_RESPONSE_TOO_LARGE');
+      }
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      const reader = response.body?.getReader();
+      if (reader) {
+        let complete = false;
+        try {
+          while (true) {
+            this.assertActive(flow);
+            const { value, done } = await reader.read();
+            if (done) { complete = true; break; }
+            size += value.byteLength;
+            // Count the decoded stream, even without or despite Content-Length.
+            if (size > MAX_LOGIN_RESPONSE_BYTES) throw new Error('LOGIN_RESPONSE_TOO_LARGE');
+            chunks.push(value);
+          }
+        } finally {
+          if (!complete) {
+            requestController.abort();
+            void reader.cancel().catch(() => undefined);
+          }
+          reader.releaseLock();
+        }
+      }
+      const body = Buffer.concat(chunks, size);
       this.assertActive(flow);
       const secrets = [flow.pin ?? '', flow.loginState ?? '', flow.oauthReturnUri ?? ''];
       for (const origin of ['https://chat.line.biz/', 'https://account.line.biz/', 'https://access.line.me/']) {

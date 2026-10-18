@@ -1,28 +1,52 @@
+import { randomInt } from 'node:crypto';
 import { LineClient, LineError } from './line-client.js';
 import { SessionManager } from './session.js';
 import { MemoryLogger } from './logger.js';
 
-export const SESSION_CHECK_INTERVAL_MS = 5 * 60_000;
+export const SESSION_IDLE_DELAY_MS = 30 * 60_000;
+export const SESSION_IDLE_JITTER_MS = 30 * 60_000;
+
+export function sessionIdleDelayMs(): number {
+  return SESSION_IDLE_DELAY_MS + randomInt(SESSION_IDLE_JITTER_MS + 1);
+}
 
 /** Read-only LINE probes. Never sends messages, starts QR, or renews login. */
 export class SessionMonitor {
   private timer?: NodeJS.Timeout;
   private active?: Promise<void>;
   private stopped = false;
+  private started = false;
+  private generation = 0;
 
   constructor(private readonly sessions: SessionManager, private readonly client: LineClient,
     private readonly logger: MemoryLogger, private readonly busy: () => boolean,
-    private readonly intervalMs = SESSION_CHECK_INTERVAL_MS) {}
+    private readonly nextDelayMs: () => number = sessionIdleDelayMs) {}
 
   start(): void {
-    void this.cycle();
+    if (this.started || this.stopped) return;
+    this.started = true;
+    this.schedule();
   }
 
-  private async cycle(): Promise<void> {
-    await this.check();
-    if (!this.stopped) {
-      this.timer = setTimeout(() => { void this.cycle(); }, this.intervalMs);
-      this.timer.unref();
+  /** Actual upstream send attempts reset the idle window, including unknown results. */
+  messageSent(): void {
+    if (!this.started || this.stopped) return;
+    ++this.generation;
+    this.schedule();
+  }
+
+  private schedule(): void {
+    clearTimeout(this.timer);
+    const generation = this.generation;
+    this.timer = setTimeout(() => { this.timer = undefined; void this.cycle(generation); }, this.nextDelayMs());
+    this.timer.unref();
+  }
+
+  private async cycle(generation: number): Promise<void> {
+    try { await this.check(); }
+    finally {
+      // A send during a pending check already scheduled a fresh idle window.
+      if (!this.stopped && generation === this.generation) this.schedule();
     }
   }
 
@@ -50,5 +74,5 @@ export class SessionMonitor {
     try { await this.active; } finally { this.active = undefined; }
   }
 
-  stop(): void { this.stopped = true; clearTimeout(this.timer); }
+  stop(): void { this.stopped = true; ++this.generation; clearTimeout(this.timer); }
 }

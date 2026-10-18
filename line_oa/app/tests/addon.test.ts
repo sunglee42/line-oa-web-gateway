@@ -305,9 +305,42 @@ test('logout refuses while a submitted send is still waiting for the upstream re
   } finally { unblock(); await sending; await h.close(); }
 });
 
+test('revoking __proto__ through the UI blocks text and image API sends with the same valid key', async () => {
+  let posts = 0;
+  const chatId = `U${'b'.repeat(32)}`;
+  const h = await running({ ingressTrust: () => true, lineRequest: async (method, path) => {
+    if (method === 'POST') posts++;
+    return { status: 200, contentType: 'application/json', body: path.includes('csrfToken') ? { token: secret() }
+      : path.includes('/contacts?') ? { list: [{ contactId: chatId, profile: { name: 'Synthetic friend' } }] } : {} };
+  } });
+  try {
+    await h.gateway.sessions.importCredentials({ version: 1, botId: `U${'a'.repeat(32)}`, importedAt: new Date().toISOString(),
+      cookies: [{ name: '__Host-chat-ses', value: secret() }] });
+    const uiHeaders = { ...await browserSession(h.ui), 'Content-Type': 'application/json' };
+    assert.equal((await fetch(h.ui + '/api/contacts/refresh', { method: 'POST', headers: uiHeaders, body: '{}' })).status, 200);
+    const added = await fetch(h.ui + '/api/aliases', { method: 'PUT', headers: uiHeaders, body: JSON.stringify({ alias: '__proto__', chatId }) });
+    assert.equal(added.status, 200);
+    const paired = await h.gateway.pairing.exchange(payload(h.gateway.pairing));
+    const auth = { Authorization: `Bearer ${paired.api_key}` };
+    const send = (message: string) => fetch(h.api + '/api/v1/messages/text', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ who: '__proto__', message, request_id: randomUUID() }) });
+    assert.equal((await send('before revocation')).status, 202); assert.equal(posts, 1);
+    assert.equal((await fetch(h.ui + '/api/aliases/__proto__', { method: 'DELETE', headers: uiHeaders })).status, 200);
+    assert.equal(h.gateway.auth.validApiKey(auth.Authorization), true);
+    const denied = await send('after revocation');
+    assert.equal(denied.status, 404);
+    assert.equal((await denied.json() as { error: { code: string } }).error.code, 'ALIAS_NOT_FOUND');
+    const form = new FormData(); form.set('who', '__proto__'); form.set('request_id', randomUUID());
+    form.set('image', new Blob([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])], { type: 'image/png' }), 'synthetic.png');
+    const image = await fetch(h.api + '/api/v1/messages/image', { method: 'POST', headers: auth, body: form });
+    assert.equal(image.status, 404); assert.equal(posts, 1);
+    assert.deepEqual(await readdir(join(h.dir, 'tmp')), []);
+  } finally { await h.close(); }
+});
+
 test('idle LINE expiry reaches the authenticated status API; explicit logout has its own reason', async () => {
   let upstream = 200;
-  const h = await running({ sessionCheckIntervalMs: 10, lineRequest: async (method, path) => {
+  const h = await running({ sessionCheckDelayMs: () => 10, lineRequest: async (method, path) => {
     assert.equal(method, 'GET');
     return { status: upstream, body: path.includes('csrfToken') ? { token: secret() } : { list: [] }, contentType: 'application/json' };
   } });

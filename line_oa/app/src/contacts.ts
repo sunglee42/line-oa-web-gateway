@@ -33,7 +33,7 @@ function validContactCache(value: unknown): value is ContactCacheFile {
 export class ContactService {
   private cache = new Map<string, { at: number; list: Contact[]; next?: string }>();
   private stored = new Map<string, Contact>();
-  private aliases: AliasMap = {};
+  private aliases = new Map<string, ContactAlias>();
   private generation = 0;
   private readonly contactsPath: string;
   private readonly aliasesPath: string;
@@ -47,7 +47,7 @@ export class ContactService {
   async load(): Promise<void> {
     const warnings: string[] = [];
     const aliases = await readJsonSafe(this.aliasesPath, {} as AliasMap, validAliases);
-    this.aliases = aliases.value;
+    this.aliases = new Map(Object.entries(aliases.value));
     if (aliases.warning) warnings.push(aliases.warning);
 
     const contacts = await readJsonSafe<ContactCacheFile | null>(this.contactsPath, null,
@@ -59,8 +59,8 @@ export class ContactService {
       const legacy = await readJsonSafe<AliasMap | null>(this.contactsPath, null,
         (value): value is AliasMap | null => value === null || validAliases(value));
       if (legacy.value && !legacy.warning) {
-        this.aliases = { ...legacy.value, ...this.aliases };
-        await atomicWriteJson(this.aliasesPath, this.aliases);
+        this.aliases = new Map([...Object.entries(legacy.value), ...this.aliases]);
+        await atomicWriteJson(this.aliasesPath, this.getAliases());
         await this.persistContacts();
       } else {
         warnings.push(contacts.warning);
@@ -69,7 +69,7 @@ export class ContactService {
       await this.persistContacts();
     }
 
-    if (!aliases.warning && Object.keys(this.aliases).length === 0) await atomicWriteJson(this.aliasesPath, {});
+    if (!aliases.warning && this.aliases.size === 0) await atomicWriteJson(this.aliasesPath, {});
     await this.persistContacts();
     this.warning = warnings.length ? warnings.join(';') : undefined;
   }
@@ -93,27 +93,27 @@ export class ContactService {
 
   allCached(): Contact[] { return [...this.stored.values()]; }
   count(): number { return this.stored.size; }
-  getAliases(): AliasMap { return structuredClone(this.aliases); }
+  getAliases(): AliasMap { return structuredClone(Object.fromEntries(this.aliases)); }
   listAliases(): Array<{ alias: string; name: string; type: 'user' | 'group' | 'unknown' }> {
-    return Object.entries(this.aliases).map(([alias, value]) => ({
+    return [...this.aliases].map(([alias, value]) => ({
       alias,
       name: value.name,
       type: this.stored.get(value.chatId)?.kind ?? 'unknown'
     }));
   }
-  resolve(alias: string): ContactAlias | undefined { return this.aliases[alias]; }
+  resolve(alias: string): ContactAlias | undefined { return this.aliases.get(alias); }
 
   async setAlias(alias: string, chatId: string): Promise<void> {
     if (!/^[a-z0-9_-]{1,32}$/.test(alias)) throw new Error('INVALID_ALIAS');
     const contact = this.stored.get(chatId);
     if (!contact) throw new Error('CONTACT_NOT_IN_CACHE');
-    this.aliases[alias] = { chatId, name: contact.name };
-    await atomicWriteJson(this.aliasesPath, this.aliases);
+    this.aliases.set(alias, { chatId, name: contact.name });
+    await atomicWriteJson(this.aliasesPath, this.getAliases());
   }
 
   async deleteAlias(alias: string): Promise<void> {
-    delete this.aliases[alias];
-    await atomicWriteJson(this.aliasesPath, this.aliases);
+    this.aliases.delete(alias);
+    await atomicWriteJson(this.aliasesPath, this.getAliases());
   }
 
   private async persistContacts(): Promise<void> {

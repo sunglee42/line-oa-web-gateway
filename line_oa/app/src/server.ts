@@ -24,7 +24,7 @@ export interface GatewayOptions {
   qrLogin?: BusinessQrLogin;
   supervisor?: SupervisorRequest;
   ingressTrust?: typeof trustedIngress;
-  sessionCheckIntervalMs?: number;
+  sessionCheckDelayMs?: () => number;
 }
 
 export async function createGateway(options: GatewayOptions = {}) {
@@ -41,13 +41,13 @@ const client = new LineClient(sessions, config.requestTimeoutMs, options.lineReq
 const contacts = new ContactService(client, dataDir, config.contactsCacheTtlMs);
 await contacts.load();
 if (contacts.warning) logger.add('CONTACTS_CONFIG', 'WARNING', undefined, contacts.warning);
-const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute);
+const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), options.sessionCheckDelayMs);
+const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute, () => sessionMonitor.messageSent());
 const images = new ImageSender(join(dataDir, 'tmp'), config.maxImageBytes, config.maxTempBytes);
 await images.init();
 const auth = new AuthManager(dataDir, config.secureCookies);
 await auth.load();
 const qrLogin = options.qrLogin ?? new BusinessQrLogin(sessions, (operation, result, target, error, details) => logger.add(operation, result, target, error, details));
-const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), options.sessionCheckIntervalMs);
 const pairing = new PairingManager(auth, config.instanceId);
 const supervisorToken = process.env.SUPERVISOR_TOKEN;
 const discovery = options.supervisor || supervisorToken

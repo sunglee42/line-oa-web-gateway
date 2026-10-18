@@ -2,7 +2,7 @@
 
 ## 自動測試
 
-已發布的 0.1.6 使用 Node.js 24、TypeScript strict、36 項 Mock 測試。本次尚未發布的閒置排程、瀏覽器識別與安全修正，已在本機 Node.js 26 通過 TypeScript strict 與 58 項 Mock 測試；尚未重新執行雙架構映像 CI。測試涵蓋：
+0.1.7 包含 58 項 Mock 測試，已在本機 Node.js 26 通過 TypeScript strict 與完整測試。Node.js 24 的 amd64／aarch64 原生建置與 smoke 結果以對應提交的 [GitHub Actions](https://github.com/xangin/line-oa-ha-addon/actions) 紀錄為準。測試涵蓋：
 
 - 探索、短效配對、過期／錯誤／已用秘密、互斥、撤銷與損壞資料拒絕。
 - 雙架構瀏覽器識別、QR 跳轉的實際來源、登入與後續文字／圖片請求識別一致。

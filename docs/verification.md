@@ -2,7 +2,7 @@
 
 ## 自動測試
 
-0.1.8 包含 71 項 Mock 測試，已在本機 Node.js 26 通過 TypeScript strict 與完整測試。Node.js 24 的 amd64／aarch64 原生建置與 smoke 結果以對應提交的 [GitHub Actions](https://github.com/xangin/line-oa-ha-addon/actions) 紀錄為準。測試涵蓋：
+0.1.9 包含 78 項 Mock 測試，已在本機 Node.js 26 通過 TypeScript strict 與完整測試。Node.js 24 的 amd64／aarch64 原生建置與 smoke 結果以對應提交的 [GitHub Actions](https://github.com/xangin/line-oa-ha-addon/actions) 紀錄為準。測試涵蓋：
 
 - 探索、短效配對、過期／錯誤／已用秘密、互斥、撤銷與損壞資料拒絕。
 - Ingress 來源、相對靜態資源、CSRF／Origin、Web Session 與 LINE 登出。

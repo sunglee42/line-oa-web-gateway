@@ -29,7 +29,7 @@ export interface GatewayOptions {
 
 export async function createGateway(options: GatewayOptions = {}) {
 const dataDir = options.dataDir ?? DATA_DIR;
-const version = '0.1.8';
+const version = '0.1.9';
 const startedAt = Date.now();
 const webDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
 const { config, warning: configWarning } = await loadConfig(dataDir);
@@ -369,6 +369,9 @@ return {
     logger.add('SERVER_START', 'SUCCESS');
     discovery?.start();
     sessionMonitor.start();
+    // Resolve restored credentials once at startup; HA polls only the cached result.
+    // Keep listeners responsive while validation (and any recovery) is in progress.
+    if (sessions.getStatus().state === 'VALIDATING') void sessionMonitor.check();
   },
   stop(): Promise<void> {
     if (stopping) return stopping;

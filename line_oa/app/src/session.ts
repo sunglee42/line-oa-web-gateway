@@ -34,7 +34,7 @@ export class SessionManager {
     if (loaded.value) {
       this.credentials = loaded.value;
       this.state = 'VALIDATING';
-      this.reason = 'Session 已載入，等待手動測試、發送或閒置驗證';
+      this.reason = 'Session 已載入，正在確認 LINE 連線';
     } else if (loaded.warning) {
       this.state = 'ERROR';
       this.reason = 'Session 檔案格式無效，請重新登入';

@@ -48,6 +48,7 @@ function classify(status: number, details?: string): LineError {
 
 export class LineClient {
   private readonly request: RequestFn;
+  private validation?: { credentials: SessionCredentials; promise: Promise<void> };
   constructor(private readonly sessions: SessionManager, timeoutMs: number, request?: RequestFn,
     private readonly onFailure?: (code: string, details: string) => void) {
     const rawRequest = request ?? requestHttps(timeoutMs);
@@ -129,8 +130,15 @@ export class LineClient {
   }
 
   async validate(): Promise<void> {
-    await this.refreshCsrf();
-    await this.getContacts('', 1);
+    const credentials = this.requireCredentials();
+    if (this.validation?.credentials === credentials) return this.validation.promise;
+    const validation = { credentials, promise: (async () => {
+      await this.refreshCsrf();
+      await this.getContacts('', 1);
+    })() };
+    this.validation = validation;
+    try { await validation.promise; }
+    finally { if (this.validation === validation) this.validation = undefined; }
   }
 
   async sendText(chatId: string, text: string): Promise<SendResult> {

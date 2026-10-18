@@ -25,3 +25,9 @@ Ingress listener 沿用 `/api/auth/session`、`/api/auth/logout`、`/api/status`
 ## 新增 API
 
 `POST /api/v1/pairing/exchange` 僅存在8787，使用短效秘密而非正式 Key。HACS 實作見 [配對契約](secure-pairing.md)。所有其他 v1 端點除 health 外皆須正式 Key；unknown v1 路徑也先驗證 Key。
+
+## 0.1.6 登入原因（向後相容）
+
+`GET /api/v1/status` 增加可選 `login_required_reason`：確認失效為 `expired`，首次尚未登入為 `not_logged_in`，本次服務執行中主動登出為 `logged_out`。正常、驗證中、網路或一般錯誤時省略欄位。舊版 client 可忽略它，API version 保持 1。
+
+狀態查詢只讀取記憶體，不因 HA 每次輪詢就呼叫 LINE。背景每 5 分鐘更新狀態；HTTP 401 才判為登入失效，403 不直接判為過期。正常發送前仍立即驗證。確認失效後等待重新登入或人工驗證；無自動換發登入憑證。

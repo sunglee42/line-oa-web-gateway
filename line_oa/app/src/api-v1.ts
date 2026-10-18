@@ -32,6 +32,7 @@ export function statusResponse(input: {
   state: SessionState;
   accountName?: string;
   lastError?: string;
+  loginRequiredReason?: string;
   now?: Date;
 }): Record<string, unknown> {
   const mapped = mapSessionState(input.state);
@@ -43,6 +44,7 @@ export function statusResponse(input: {
     gateway_status: 'online',
     line_logged_in: mapped.lineLoggedIn,
     session_status: mapped.sessionStatus,
+    ...(input.loginRequiredReason ? { login_required_reason: input.loginRequiredReason } : {}),
     account_name: input.accountName ?? null,
     last_error: safeError,
     updated_at: (input.now ?? new Date()).toISOString()

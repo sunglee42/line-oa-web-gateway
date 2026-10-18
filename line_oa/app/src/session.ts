@@ -19,6 +19,7 @@ export class SessionManager {
   private credentials?: SessionCredentials;
   private generation = 0;
   private state: SessionState = 'AUTH_REQUIRED';
+  private authRequiredReason: 'not_logged_in' | 'logged_out' = 'not_logged_in';
   private reason = '尚未登入 LINE，請先登入';
   private lastValidatedAt?: string;
   private readonly path: string;
@@ -38,10 +39,11 @@ export class SessionManager {
   }
 
   getCredentials(): SessionCredentials | undefined { return this.credentials; }
-  getStatus(): { state: SessionState; reason: string; lastValidatedAt?: string; lastLoginAt?: string; loginAgeDays?: number; accountName?: string; botIdConfigured: boolean } {
+  getStatus(): { state: SessionState; reason: string; loginRequiredReason?: 'expired' | 'not_logged_in' | 'logged_out'; lastValidatedAt?: string; lastLoginAt?: string; loginAgeDays?: number; accountName?: string; botIdConfigured: boolean } {
     const lastLoginAt = this.credentials?.importedAt;
     const loginAgeDays = lastLoginAt ? Math.max(0, Math.floor((Date.now() - Date.parse(lastLoginAt)) / 86_400_000)) : undefined;
-    return { state: this.state, reason: this.reason, lastValidatedAt: this.lastValidatedAt, lastLoginAt, loginAgeDays, accountName: this.credentials?.accountName, botIdConfigured: !!this.credentials };
+    const loginRequiredReason = this.state === 'EXPIRED' ? 'expired' : this.state === 'AUTH_REQUIRED' ? this.authRequiredReason : undefined;
+    return { state: this.state, reason: this.reason, loginRequiredReason, lastValidatedAt: this.lastValidatedAt, lastLoginAt, loginAgeDays, accountName: this.credentials?.accountName, botIdConfigured: !!this.credentials };
   }
 
   mark(state: SessionState, reason: string): void {
@@ -55,6 +57,7 @@ export class SessionManager {
     ++this.generation;
     this.credentials = undefined;
     this.state = 'AUTH_REQUIRED';
+    this.authRequiredReason = 'logged_out';
     this.reason = '已登出 LINE，請重新登入';
     this.lastValidatedAt = undefined;
     // Queue a tombstone after pending writes so no older import/refresh can restore credentials.

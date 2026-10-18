@@ -8,6 +8,7 @@ import { trustedIngress, ingressPath, ingressMutationAllowed } from './ingress.j
 import { DATA_DIR, loadConfig } from './config.js';
 import { MemoryLogger } from './logger.js';
 import { SessionManager } from './session.js';
+import { SessionMonitor } from './session-monitor.js';
 import { LineClient, LineError, type RequestFn } from './line-client.js';
 import { ContactService } from './contacts.js';
 import { MessageSender } from './sender.js';
@@ -23,11 +24,12 @@ export interface GatewayOptions {
   qrLogin?: BusinessQrLogin;
   supervisor?: SupervisorRequest;
   ingressTrust?: typeof trustedIngress;
+  sessionCheckIntervalMs?: number;
 }
 
 export async function createGateway(options: GatewayOptions = {}) {
 const dataDir = options.dataDir ?? DATA_DIR;
-const version = '0.1.5';
+const version = '0.1.6';
 const startedAt = Date.now();
 const webDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
 const { config, warning: configWarning } = await loadConfig(dataDir);
@@ -45,6 +47,7 @@ await images.init();
 const auth = new AuthManager(dataDir, config.secureCookies);
 await auth.load();
 const qrLogin = options.qrLogin ?? new BusinessQrLogin(sessions, (operation, result, target, error, details) => logger.add(operation, result, target, error, details));
+const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), options.sessionCheckIntervalMs);
 const pairing = new PairingManager(auth, config.instanceId);
 const supervisorToken = process.env.SUPERVISOR_TOKEN;
 const discovery = options.supervisor || supervisorToken
@@ -150,7 +153,7 @@ async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: stri
   pairing.authenticated();
   if (req.method === 'GET' && path === '/api/v1/status') {
     const session = sessions.getStatus();
-    return json(res, 200, statusResponse({ instanceId: config.instanceId, version, state: session.state, accountName: session.accountName, lastError: logger.lastError() }));
+    return json(res, 200, statusResponse({ instanceId: config.instanceId, version, state: session.state, accountName: session.accountName, lastError: logger.lastError(), loginRequiredReason: session.loginRequiredReason }));
   }
   if (req.method === 'GET' && path === '/api/v1/aliases') return json(res, 200, { aliases: contacts.listAliases() });
   if (req.method === 'POST' && path === '/api/v1/messages/text') {
@@ -353,19 +356,6 @@ const apiServer = http.createServer(async (req, res) => {
   }
 });
 for (const server of [uiServer, apiServer]) { server.requestTimeout = 20_000; server.headersTimeout = 10_000; }
-async function validateStartupSession(): Promise<void> {
-  if (!sessions.getCredentials()) return;
-  try {
-    await client.refreshCsrf();
-    await contacts.search('', true);
-    sessions.mark('CONNECTED', 'Session 啟動驗證成功');
-    logger.add('SESSION_STARTUP_VALIDATE', 'SUCCESS');
-  } catch (error) {
-    const kind = error instanceof LineError ? error.kind : 'NETWORK';
-    sessions.mark(kind === 'AUTH' ? 'EXPIRED' : kind === 'NETWORK' ? 'DISCONNECTED' : 'ERROR', `啟動驗證失敗：${kind}`);
-    logger.add('SESSION_STARTUP_VALIDATE', 'FAILED', undefined, kind);
-  }
-}
 let stopping: Promise<void> | undefined;
 return {
   pairing, discovery, sessions, contacts, auth, uiServer, apiServer,
@@ -378,11 +368,12 @@ return {
     catch (error) { await this.stop(); throw error; }
     logger.add('SERVER_START', 'SUCCESS');
     discovery?.start();
-    void validateStartupSession();
+    sessionMonitor.start();
   },
   stop(): Promise<void> {
     if (stopping) return stopping;
     discovery?.stop();
+    sessionMonitor.stop();
     qrLogin.close();
     stopping = (async () => {
       const close = (server: http.Server) => new Promise<void>(resolve => {

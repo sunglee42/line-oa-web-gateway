@@ -128,7 +128,7 @@ test('actual socket, not forwarded user headers, protects Ingress; API port excl
       assert.equal((await fetch(h.api + path)).status, 404);
     }
     const health = await (await fetch(h.api + '/api/v1/health')).json();
-    assert.deepEqual(health, { status: 'ok', version: '0.1.5', api_version: 1 });
+    assert.deepEqual(health, { status: 'ok', version: '0.1.6', api_version: 1 });
     for (const path of ['/api/v1/status', '/api/v1/aliases']) assert.equal((await fetch(h.api + path)).status, 401);
     const b = payload(h.gateway.pairing);
     assert.equal((await fetch(h.api + '/api/v1/pairing/exchange', { method: 'POST', headers: { Origin: 'http://attacker', 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).status, 403);
@@ -170,6 +170,7 @@ test('Ingress relative assets, CSRF, QR routes, logout, reset and internal crede
     }
     const publicStatus = await (await fetch(h.api + '/api/v1/status', { headers: { Authorization: `Bearer ${key}` } })).json() as Record<string, unknown>;
     assert.equal(publicStatus.line_logged_in, false); assert.equal(publicStatus.session_status, 'auth_required');
+    assert.equal(publicStatus.login_required_reason, 'not_logged_in');
     assert.equal((await fetch(h.ui + '/api/v1/status', { headers })).status, 404);
     assert.equal((await fetch(h.ui + '/api/pairing/reset', { method: 'POST', headers })).status, 200);
     assert.equal((await fetch(h.api + '/api/v1/status', { headers: { Authorization: `Bearer ${key}` } })).status, 401);
@@ -302,4 +303,34 @@ test('logout refuses while a submitted send is still waiting for the upstream re
     assert.ok(h.gateway.sessions.getCredentials());
     unblock(); assert.equal((await sending).status, 202);
   } finally { unblock(); await sending; await h.close(); }
+});
+
+test('idle LINE expiry reaches the authenticated status API; explicit logout has its own reason', async () => {
+  let upstream = 200;
+  const h = await running({ sessionCheckIntervalMs: 10, lineRequest: async (method, path) => {
+    assert.equal(method, 'GET');
+    return { status: upstream, body: path.includes('csrfToken') ? { token: secret() } : { list: [] }, contentType: 'application/json' };
+  } });
+  try {
+    const paired = await h.gateway.pairing.exchange(payload(h.gateway.pairing));
+    const headers = { Authorization: `Bearer ${paired.api_key}` };
+    const status = async () => (await (await fetch(h.api + '/api/v1/status', { headers })).json()) as Record<string, unknown>;
+    const waitFor = async (expected: string) => {
+      for (let i = 0; i < 100; i++) {
+        const value = await status();
+        if (value.session_status === expected) return value;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.fail(`Session did not become ${expected}`);
+    };
+    await h.gateway.sessions.importCredentials({ version: 1, botId: `U${'a'.repeat(32)}`, importedAt: new Date().toISOString(), cookies: [{ name: '__Host-chat-ses', value: secret() }] });
+    assert.equal((await waitFor('ready')).line_logged_in, true);
+    upstream = 401;
+    const expired = await waitFor('expired');
+    assert.equal(expired.line_logged_in, false); assert.equal(expired.login_required_reason, 'expired');
+    assert.equal(h.gateway.auth.validApiKey(headers.Authorization), true);
+    await h.gateway.sessions.logout();
+    const loggedOut = await status();
+    assert.equal(loggedOut.session_status, 'auth_required'); assert.equal(loggedOut.login_required_reason, 'logged_out');
+  } finally { await h.close(); }
 });

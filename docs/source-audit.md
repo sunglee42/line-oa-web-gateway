@@ -33,3 +33,5 @@
 `docs/upstream-sha256.json`記錄原檔案checksum。執行`python3 scripts/verify-source.py <原Gateway路徑>`可驗證原專案未被修改，以及圖片與multipart模組仍一致；其餘擴充模組需人工比對上述差異。同步上游修補時人工比對差異、重新跑Mock測試，不整個覆蓋App server/config/auth。更新checksum前應記錄基礎版本與安全影響。
 
 HACS 為獨立專案，本儲存庫不包含或部署其整合程式。
+
+0.1.6 新增 `session-monitor.ts` 背景健康檢查，`line-client.ts` 共用同一 Session 進行中的驗證；`session.ts`／狀態 API 增加登入原因，沒有新增登入續期端點，也未修改原 LXC。

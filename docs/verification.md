@@ -2,7 +2,7 @@
 
 ## 自動測試
 
-Node.js 24、TypeScript strict、30 項 Mock 測試，涵蓋：
+Node.js 24、TypeScript strict、36 項 Mock 測試，涵蓋：
 
 - 探索、短效配對、過期／錯誤／已用秘密、互斥、撤銷與損壞資料拒絕。
 - Ingress 來源、相對靜態資源、CSRF／Origin、Web Session 與 LINE 登出。
@@ -10,6 +10,7 @@ Node.js 24、TypeScript strict、30 項 Mock 測試，涵蓋：
 - 別名、文字與圖片、UNKNOWN 不重送、請求去重、圖片清理。
 - 完整失敗回應、敏感欄位遮蔽、當地時區與易讀日誌。
 - 重啟後永久身份／配對／別名／Session 保留。
+- 背景定時驗證、停止、確認失效後停查、網路恢復、驗證共用與新登入／登出競態。
 
 `check-backup-policy.py` 檢查排除規則保留必要資料、版本 metadata 一致。`check-publication.py` 檢查發布檔案不含私有部署資料與常見秘密。這些檢查不能取代人工檢查日誌及憑證。
 

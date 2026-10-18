@@ -7,6 +7,7 @@ export function redactText(value: string, secrets: string[] = []): string {
     for (const encoded of new Set([secret, encodeURIComponent(secret)])) text = text.split(encoded).join('[已遮蔽]');
   }
   text = text.replace(/((?:set-cookie|cookie|authorization)\s*:\s*)[^\r\n]+/gi, '$1[已遮蔽]')
+    .replace(/(\bapp-data\s*=\s*)(?:"[^"]*"|'[^']*')/gi, '$1"[已遮蔽]"')
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [已遮蔽]')
     .replace(/(<input\b[^>]*\bvalue\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1"[已遮蔽]"')
     .replace(/((?:["']?)(?:[\w-]*(?:token|csrf|password|secret|session|cookie|credential|api[-_]?key)|ses|loginState|pin|pinCode)["']?\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;&<>}]+)/gi, '$1[已遮蔽]')

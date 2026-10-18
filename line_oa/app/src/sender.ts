@@ -53,6 +53,8 @@ export class MessageSender {
       } else if (result.error === 'AUTH') this.sessions.mark('EXPIRED', 'LINE Session 已失效，需要人工重新授權');
       else if (result.error === 'CSRF') this.sessions.mark('ERROR', 'CSRF 驗證失敗，已停止發送');
       else if (result.error === 'RATE_LIMIT') this.sessions.mark('ERROR', 'LINE 回報速率限制，已停止發送');
+      else if (result.error === 'NETWORK') this.sessions.mark('DISCONNECTED', 'LINE 連線恢復失敗，請稍後重試');
+      else if (result.error === 'INVALID_RESPONSE') this.sessions.mark('ERROR', 'LINE 連線恢復回應異常，請查看日誌');
       this.logger.add('SEND_TEXT', result.result, alias, result.error);
       this.onMessageSent();
       return result;
@@ -93,6 +95,8 @@ export class MessageSender {
       } else if (result.error === 'AUTH') this.sessions.mark('EXPIRED', 'LINE Session 已失效，需要人工重新授權');
       else if (result.error === 'CSRF') this.sessions.mark('ERROR', 'CSRF 驗證失敗，已停止發送');
       else if (result.error === 'RATE_LIMIT') this.sessions.mark('ERROR', 'LINE 回報速率限制，已停止發送');
+      else if (result.error === 'NETWORK') this.sessions.mark('DISCONNECTED', 'LINE 連線恢復失敗，請稍後重試');
+      else if (result.error === 'INVALID_RESPONSE') this.sessions.mark('ERROR', 'LINE 連線恢復回應異常，請查看日誌');
       this.logger.add('SEND_IMAGE', result.result, alias, result.error);
       this.onMessageSent();
       return result;

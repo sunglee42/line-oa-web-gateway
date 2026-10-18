@@ -29,7 +29,7 @@ export interface GatewayOptions {
 
 export async function createGateway(options: GatewayOptions = {}) {
 const dataDir = options.dataDir ?? DATA_DIR;
-const version = '0.1.7';
+const version = '0.1.8';
 const startedAt = Date.now();
 const webDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
 const { config, warning: configWarning } = await loadConfig(dataDir);
@@ -37,7 +37,8 @@ const logger = new MemoryLogger();
 if (configWarning) logger.add('CONFIG', 'WARNING', undefined, configWarning);
 const sessions = new SessionManager(dataDir);
 await sessions.load();
-const client = new LineClient(sessions, config.requestTimeoutMs, options.lineRequest, (code, details) => logger.add('LINE_UPSTREAM', 'FAILED', undefined, code, details));
+const qrLogin = options.qrLogin ?? new BusinessQrLogin(sessions, (operation, result, target, error, details) => logger.add(operation, result, target, error, details));
+const client = new LineClient(sessions, config.requestTimeoutMs, options.lineRequest, (code, details) => logger.add('LINE_UPSTREAM', 'FAILED', undefined, code, details), credentials => qrLogin.recover(credentials));
 const contacts = new ContactService(client, dataDir, config.contactsCacheTtlMs);
 await contacts.load();
 if (contacts.warning) logger.add('CONTACTS_CONFIG', 'WARNING', undefined, contacts.warning);
@@ -47,7 +48,6 @@ const images = new ImageSender(join(dataDir, 'tmp'), config.maxImageBytes, confi
 await images.init();
 const auth = new AuthManager(dataDir, config.secureCookies);
 await auth.load();
-const qrLogin = options.qrLogin ?? new BusinessQrLogin(sessions, (operation, result, target, error, details) => logger.add(operation, result, target, error, details));
 const pairing = new PairingManager(auth, config.instanceId);
 const supervisorToken = process.env.SUPERVISOR_TOKEN;
 const discovery = options.supervisor || supervisorToken

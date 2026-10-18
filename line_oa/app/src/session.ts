@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { SessionCredentials, SessionState } from './types.js';
 import { atomicWriteJson, readJsonSafe } from './storage.js';
+import { MemoryCookieJar, validLoginCookies } from './cookie-jar.js';
 
 export function validSession(value: unknown): value is SessionCredentials {
   if (!value || typeof value !== 'object') return false;
@@ -10,6 +11,7 @@ export function validSession(value: unknown): value is SessionCredentials {
     v.cookies.every(c => allowed.has(c.name) && typeof c.value === 'string' && !!c.value && !/[\r\n;]/.test(c.value)) &&
     new Set(v.cookies.map(c => c.name)).size === v.cookies.length;
   return v.version === 1 && /^U[0-9a-f]{32}$/.test(v.botId ?? '') && cookiesValid &&
+    (v.loginCookies === undefined || validLoginCookies(v.loginCookies)) &&
     typeof v.importedAt === 'string' && Number.isFinite(Date.parse(v.importedAt)) &&
     (v.csrfToken === undefined || (typeof v.csrfToken === 'string' && !!v.csrfToken && !/[\r\n;]/.test(v.csrfToken))) &&
     (v.clientVersion === undefined || (typeof v.clientVersion === 'string' && v.clientVersion.length <= 100 && !/[\r\n]/.test(v.clientVersion)));
@@ -18,6 +20,7 @@ export function validSession(value: unknown): value is SessionCredentials {
 export class SessionManager {
   private credentials?: SessionCredentials;
   private generation = 0;
+  private cookieUpdates: Promise<void> = Promise.resolve();
   private state: SessionState = 'AUTH_REQUIRED';
   private authRequiredReason: 'not_logged_in' | 'logged_out' = 'not_logged_in';
   private reason = '尚未登入 LINE，請先登入';
@@ -71,6 +74,53 @@ export class SessionManager {
     if (cookie) cookie.value = token;
     else this.credentials.cookies.push({ name: 'XSRF-TOKEN', value: token });
     await atomicWriteJson(this.path, this.credentials, 0o600);
+  }
+
+  async renewCredentials(next: SessionCredentials, expected: SessionCredentials): Promise<void> {
+    const generation = this.generation;
+    const update = this.cookieUpdates.then(() => this.commitRenewal(next, expected, generation));
+    this.cookieUpdates = update.catch(() => undefined);
+    return update;
+  }
+
+  private async commitRenewal(next: SessionCredentials, expected: SessionCredentials, generation: number): Promise<void> {
+    if (this.credentials !== expected || next.botId !== expected.botId) throw new Error('SESSION_CHANGED');
+    if (generation !== this.generation) throw new Error('SESSION_CHANGED');
+    if (!validSession(next)) throw new Error('INVALID_SESSION');
+    await atomicWriteJson(this.path, next, 0o600);
+    if (generation !== this.generation || this.credentials !== expected) throw new Error('SESSION_CHANGED');
+    // Keep the identity used by pending validation/logout guards.
+    Object.assign(expected, structuredClone(next));
+    ++this.generation;
+  }
+
+  async updateCookies(headers: string[], expected: SessionCredentials, sentCookie?: string): Promise<void> {
+    const update = this.cookieUpdates.then(async () => {
+      if (!headers.length || this.credentials !== expected || (sentCookie !== undefined &&
+        sentCookie !== expected.cookies.map(c => `${c.name}=${c.value}`).join('; '))) return;
+      const jar = this.cookieJar(expected);
+      const url = new URL('https://chat.line.biz/');
+      for (const header of headers) jar.set(url, header);
+      const cookies = (['ses', '__Host-chat-ses', 'XSRF-TOKEN'] as const).flatMap(name => {
+        const value = jar.value(name, url);
+        return value ? [{ name, value }] : [];
+      });
+      // A clearing response must not destroy the last recoverable authentication state.
+      if (!cookies.some(c => c.name === '__Host-chat-ses')) return;
+      await this.commitRenewal({ ...expected, cookies, loginCookies: jar.snapshot() }, expected, this.generation);
+    });
+    this.cookieUpdates = update.catch(() => undefined);
+    return update;
+  }
+
+  cookieJar(credentials: SessionCredentials): MemoryCookieJar {
+    const jar = new MemoryCookieJar();
+    jar.restore(credentials.loginCookies ?? []);
+    const url = new URL('https://chat.line.biz/');
+    for (const c of credentials.cookies) {
+      if (jar.value(c.name, url) !== c.value) jar.set(url, `${c.name}=${c.value}; Path=/; Secure${c.name === 'ses' ? '; Domain=line.biz' : ''}`);
+    }
+    return jar;
   }
 
   async importCredentials(credentials: SessionCredentials): Promise<void> {

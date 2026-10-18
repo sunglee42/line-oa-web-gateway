@@ -1,5 +1,6 @@
 import { diagnosticText, networkDetails } from './diagnostics.js';
-import { isIP } from 'node:net';
+import { MemoryCookieJar } from './cookie-jar.js';
+export { MemoryCookieJar } from './cookie-jar.js';
 import { randomBytes } from 'node:crypto';
 import type { SessionCredentials } from './types.js';
 import { SessionManager } from './session.js';
@@ -27,93 +28,6 @@ export interface PublicQrLoginState {
   details?: string;
 }
 
-type StoredCookie = {
-  name: string;
-  value: string;
-  domain: string;
-  hostOnly: boolean;
-  path: string;
-  secure: boolean;
-  expiresAt?: number;
-};
-
-function defaultCookiePath(pathname: string): string {
-  if (!pathname.startsWith('/') || pathname === '/') return '/';
-  const end = pathname.lastIndexOf('/');
-  return end <= 0 ? '/' : pathname.slice(0, end);
-}
-
-function domainMatches(host: string, domain: string, hostOnly: boolean): boolean {
-  return hostOnly ? host === domain : host === domain || host.endsWith(`.${domain}`);
-}
-
-export class MemoryCookieJar {
-  private cookies = new Map<string, StoredCookie>();
-
-  setFromHeaders(url: URL, headers: Headers): void {
-    const values = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
-    for (const value of values) this.set(url, value);
-  }
-
-  set(url: URL, header: string): void {
-    const parts = header.split(';').map(part => part.trim());
-    const pair = parts.shift();
-    if (!pair) return;
-    const equals = pair.indexOf('=');
-    if (equals <= 0) return;
-    const name = pair.slice(0, equals);
-    const value = pair.slice(equals + 1);
-    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || /[\r\n;]/.test(value)) return;
-    let domain = url.hostname.toLowerCase();
-    let hostOnly = true;
-    let path = defaultCookiePath(url.pathname);
-    let secure = false;
-    let expiresAt: number | undefined;
-    for (const raw of parts) {
-      const split = raw.indexOf('=');
-      const key = (split < 0 ? raw : raw.slice(0, split)).trim().toLowerCase();
-      const attr = split < 0 ? '' : raw.slice(split + 1).trim();
-      if (key === 'domain') {
-        const candidate = attr.replace(/^\./, '').toLowerCase();
-        if (!candidate || isIP(candidate) || !domainMatches(url.hostname.toLowerCase(), candidate, false)) return;
-        domain = candidate;
-        hostOnly = false;
-      } else if (key === 'path' && attr.startsWith('/')) path = attr;
-      else if (key === 'secure') secure = true;
-      else if (key === 'max-age' && /^-?\d+$/.test(attr)) expiresAt = Date.now() + Number(attr) * 1000;
-      else if (key === 'expires' && !expiresAt) {
-        const parsed = Date.parse(attr);
-        if (Number.isFinite(parsed)) expiresAt = parsed;
-      }
-    }
-    if (name.startsWith('__Host-') && (!secure || !hostOnly || path !== '/')) return;
-    const key = `${domain}\n${path}\n${name}`;
-    if (expiresAt !== undefined && expiresAt <= Date.now()) this.cookies.delete(key);
-    else this.cookies.set(key, { name, value, domain, hostOnly, path, secure, expiresAt });
-  }
-
-  header(url: URL): string {
-    const now = Date.now();
-    const matches: StoredCookie[] = [];
-    for (const [key, cookie] of this.cookies) {
-      if (cookie.expiresAt !== undefined && cookie.expiresAt <= now) { this.cookies.delete(key); continue; }
-      if (cookie.secure && url.protocol !== 'https:') continue;
-      if (!domainMatches(url.hostname.toLowerCase(), cookie.domain, cookie.hostOnly)) continue;
-      if (!(url.pathname === cookie.path || url.pathname.startsWith(cookie.path.endsWith('/') ? cookie.path : `${cookie.path}/`))) continue;
-      matches.push(cookie);
-    }
-    matches.sort((a, b) => b.path.length - a.path.length);
-    return matches.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-  }
-
-  value(name: string, url: URL): string | undefined {
-    const header = this.header(url);
-    for (const pair of header.split('; ')) if (pair.startsWith(`${name}=`)) return pair.slice(name.length + 1);
-    return undefined;
-  }
-
-  clear(): void { this.cookies.clear(); }
-}
 
 function decodeHtml(value: string): string {
   return value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
@@ -149,6 +63,40 @@ export function extractLineLoginForm(html: string, baseUrl: URL): { action: URL;
     }
   }
   throw new Error(lineActionFound ? 'LOGIN_BUSINESS_CSRF_MISSING' : 'LOGIN_BUSINESS_ACTION_MISSING');
+}
+
+/** LINE's remembered-user page supplies this URL in app-data, not in an HTML form. */
+export function extractRememberedLogin(html: string, pageUrl: URL): URL | undefined {
+  if (pageUrl.origin !== ACCESS_ORIGIN || pageUrl.pathname !== '/oauth2/v2.1/login') return;
+  for (const tag of html.matchAll(/<app\b[^>]*>/gi)) {
+    const raw = attributes(tag[0])['app-data'];
+    if (!raw) continue;
+    let data: { props?: Record<string, unknown> };
+    try { data = JSON.parse(raw); } catch { continue; }
+    const target = data.props?.['login-url'];
+    if (typeof target !== 'string') continue;
+    const returnUri = pageUrl.searchParams.get('returnUri');
+    const url = new URL(target, pageUrl);
+    if (url.origin !== ACCESS_ORIGIN || url.pathname !== '/oauth2/v2.1/ssoLogin' || url.username || url.password ||
+      !returnUri?.startsWith('/oauth2/v2.1/authorize/consent?') ||
+      !/^\d{5,20}$/.test(url.searchParams.get('loginChannelId') ?? '') ||
+      url.searchParams.get('loginChannelId') !== pageUrl.searchParams.get('loginChannelId') ||
+      url.searchParams.get('returnUri') !== returnUri) throw new Error('LOGIN_REDIRECT_REJECTED');
+    return url;
+  }
+}
+
+export function extractLoginMetaRedirect(html: string, pageUrl: URL): URL | undefined {
+  for (const tag of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs = attributes(tag[0]);
+    if (attrs['http-equiv']?.toLowerCase() !== 'refresh') continue;
+    const match = /^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*(.*?)\s*$/i.exec(attrs.content ?? '');
+    if (!match?.[1]) throw new Error('LOGIN_REDIRECT_REJECTED');
+    const target = match[1].replace(/^(['"])(.*)\1$/, '$2');
+    const url = new URL(target, pageUrl);
+    if (url.protocol !== 'https:' || !ALLOWED_HOSTS.has(url.hostname) || url.username || url.password || url.port) throw new Error('LOGIN_REDIRECT_REJECTED');
+    return url;
+  }
 }
 
 function normalizedLoginHtml(html: string): string {
@@ -287,6 +235,7 @@ type Flow = {
   terminalAt?: number;
   botCandidates: Set<string>;
   diagnostics?: string;
+  expected?: SessionCredentials;
 };
 
 type HttpResult = { url: URL; status: number; headers: Headers; body: Buffer };
@@ -294,6 +243,8 @@ type LoginTrace = (operation: string, result: string, target?: string, error?: s
 
 export class BusinessQrLogin {
   private flow?: Flow;
+  private recoveryFlow?: Flow;
+  private recovery?: { expected: SessionCredentials; promise: Promise<void> };
   constructor(private readonly sessions: SessionManager, private readonly trace?: LoginTrace) {}
 
   state(owner: string): PublicQrLoginState {
@@ -317,6 +268,8 @@ export class BusinessQrLogin {
   }
 
   async start(owner: string): Promise<PublicQrLoginState> {
+    if (this.recoveryFlow) this.destroy(this.recoveryFlow);
+    this.recoveryFlow = undefined;
     this.prune();
     if (this.flow && this.flow.owner !== owner && !this.flow.terminalAt) throw new Error('LOGIN_BUSY');
     if (this.flow) this.destroy(this.flow);
@@ -380,6 +333,43 @@ export class BusinessQrLogin {
   close(): void {
     if (this.flow) this.destroy(this.flow);
     this.flow = undefined;
+    if (this.recoveryFlow) this.destroy(this.recoveryFlow);
+    this.recoveryFlow = undefined;
+  }
+
+  async recover(expected: SessionCredentials): Promise<void> {
+    if (this.recovery?.expected === expected) return this.recovery.promise;
+    if (this.recovery || (this.flow && !this.flow.terminalAt)) throw new Error('LOGIN_BUSY');
+    if (this.sessions.getCredentials() !== expected) throw new Error('SESSION_CHANGED');
+    const flow: Flow = {
+      owner: 'session-recovery', status: 'finalizing', jar: this.sessions.cookieJar(expected),
+      controller: new AbortController(), createdAt: Date.now(), expiresAt: Date.now() + 90_000,
+      finishSteps: 0, botCandidates: new Set(), expected,
+      selectedBotId: expected.botId, selectedAccountName: expected.accountName
+    };
+    this.recoveryFlow = flow;
+    const promise = (async () => {
+      try {
+        let response = await this.beginLogin(flow);
+        if (response.url.hostname === 'access.line.me') {
+          const remembered = extractRememberedLogin(this.asText(response), response.url);
+          if (!remembered) throw new Error('LOGIN_REAUTH_REQUIRED');
+          response = await this.follow(flow, remembered, { headers: { Referer: response.url.toString() } });
+        }
+        await this.complete(flow, response);
+        if (flow.status !== 'ok') throw new Error('LOGIN_REAUTH_REQUIRED');
+        this.trace?.('SESSION_RECOVERY', 'SUCCESS');
+      } catch (error) {
+        const code = this.safeError(error);
+        this.trace?.('SESSION_RECOVERY', 'FAILED', undefined, code, flow.diagnostics);
+        throw error instanceof Error && error.message === 'SESSION_CHANGED' ? error : new Error(code);
+      } finally {
+        this.destroy(flow);
+        if (this.recoveryFlow === flow) this.recoveryFlow = undefined;
+      }
+    })();
+    this.recovery = { expected, promise };
+    try { await promise; } finally { if (this.recovery?.promise === promise) this.recovery = undefined; }
   }
 
   private prune(): void {
@@ -419,7 +409,8 @@ export class BusinessQrLogin {
   }
 
   private assertActive(flow: Flow): void {
-    if (this.flow !== flow || flow.controller.signal.aborted) throw new Error('LOGIN_CANCELLED_OR_TIMEOUT');
+    if ((this.flow !== flow && this.recoveryFlow !== flow) || flow.controller.signal.aborted) throw new Error('LOGIN_CANCELLED_OR_TIMEOUT');
+    if (flow.expected && this.sessions.getCredentials() !== flow.expected) throw new Error('SESSION_CHANGED');
     if (Date.now() > flow.expiresAt) throw new Error('LOGIN_QR_EXPIRED');
   }
 
@@ -523,11 +514,13 @@ export class BusinessQrLogin {
       const response = await this.request(flow, url, { method, body, headers });
       this.trace?.('QR_LOGIN_HTTP', `HTTP_${response.status}`, this.routeCategory(url));
       const location = response.headers.get('location');
-      if (![301, 302, 303, 307, 308].includes(response.status) || !location) return response;
-      const next = new URL(location, url);
+      const httpRedirect = [301, 302, 303, 307, 308].includes(response.status) && !!location;
+      const next = httpRedirect ? new URL(location!, url) : response.status === 200 &&
+        response.headers.get('content-type')?.includes('text/html') ? extractLoginMetaRedirect(response.body.toString('utf8'), url) : undefined;
+      if (!next) return response;
       this.validateUrl(next);
       referer = url.toString();
-      if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
+      if (!httpRedirect || response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
         method = 'GET'; body = undefined; extraHeaders = {};
       }
       url = next;
@@ -550,8 +543,9 @@ export class BusinessQrLogin {
     } catch { throw new Error(invalidCode); }
   }
 
-  private async createQr(flow: Flow): Promise<void> {
+  private async beginLogin(flow: Flow): Promise<HttpResult> {
     const businessLogin = await this.follow(flow, new URL(START_URL));
+    if (businessLogin.status === 200 && businessLogin.url.hostname === 'chat.line.biz') return businessLogin;
     if (businessLogin.status !== 200 || businessLogin.url.hostname !== 'account.line.biz') throw new Error('LOGIN_UPSTREAM_REJECTED');
     let form: { action: URL; csrf: string };
     try {
@@ -568,10 +562,14 @@ export class BusinessQrLogin {
       form = { action, csrf };
     }
     const postBody = new URLSearchParams({ _csrf: form.csrf }).toString();
-    const lineLogin = await this.follow(flow, form.action, {
+    return this.follow(flow, form.action, {
       method: 'POST', body: postBody,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: 'https://account.line.biz', Referer: businessLogin.url.toString() }
     });
+  }
+
+  private async createQr(flow: Flow): Promise<void> {
+    const lineLogin = await this.beginLogin(flow);
     if (lineLogin.status !== 200 || lineLogin.url.hostname !== 'access.line.me') throw new Error('LOGIN_UPSTREAM_REJECTED');
     const options = extractQrOptions(this.asText(lineLogin), lineLogin.url);
     const loginState = lineLogin.url.searchParams.get('loginState') ?? '';
@@ -677,6 +675,7 @@ export class BusinessQrLogin {
       }
       const form = this.hiddenOnlyForm(text, response.url);
       if (!form) {
+        if (flow.expected) throw new Error('LOGIN_REAUTH_REQUIRED');
         this.offerInteraction(flow, response, text);
         return;
       }
@@ -738,9 +737,22 @@ export class BusinessQrLogin {
       const value = flow.jar.value(name, chatUrl);
       if (value) cookies.push({ name, value });
     }
-    const credentials: SessionCredentials = { version: 1, botId, ...(flow.selectedAccountName ? { accountName: flow.selectedAccountName } : {}), csrfToken, cookies, importedAt: new Date().toISOString() };
+    const credentials: SessionCredentials = { ...flow.expected, version: 1, botId, ...(flow.selectedAccountName ? { accountName: flow.selectedAccountName } : {}), csrfToken, cookies,
+      loginCookies: flow.jar.snapshot(), importedAt: flow.expected?.importedAt ?? new Date().toISOString() };
     this.assertActive(flow);
-    await this.sessions.importCredentials(credentials);
+    if (flow.expected) {
+      // Confirm access to the original OA before replacing the saved credentials.
+      const verify = await this.request(flow, new URL(`/api/v2/bots/${botId}/contacts?query=&sortKey=DISPLAY_NAME&sortOrder=ASC&filterKey=ALL&limit=1`, START_URL), {
+        headers: { Accept: 'application/json', 'X-XSRF-TOKEN': csrfToken, Referer: referer.toString() }
+      });
+      const data = this.json(verify, 'LOGIN_CONTACTS_INVALID', 'LOGIN_VERIFY');
+      if (!Array.isArray(data.list)) throw new Error('LOGIN_CONTACTS_INVALID');
+      // Verification may rotate cookies too.
+      for (const c of cookies) c.value = flow.jar.value(c.name, chatUrl) ?? c.value;
+      credentials.loginCookies = flow.jar.snapshot();
+      await this.sessions.renewCredentials(credentials, flow.expected);
+      this.sessions.mark('CONNECTED', 'LINE 連線已恢復');
+    } else await this.sessions.importCredentials(credentials);
     this.assertActive(flow);
     flow.diagnostics = undefined;
     flow.status = 'ok';

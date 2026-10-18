@@ -9,6 +9,7 @@ export interface SessionCredentials {
   clientVersion?: string;
   csrfToken?: string;
   cookies: CookieValue[];
+  loginCookies?: import('./cookie-jar.js').StoredCookie[];
   importedAt: string;
 }
 

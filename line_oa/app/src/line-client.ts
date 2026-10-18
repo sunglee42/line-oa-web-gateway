@@ -50,15 +50,33 @@ function classify(status: number, details?: string): LineError {
 export class LineClient {
   private readonly request: RequestFn;
   private validation?: { credentials: SessionCredentials; promise: Promise<void> };
+  private recovery?: { credentials: SessionCredentials; promise: Promise<void> };
   constructor(private readonly sessions: SessionManager, timeoutMs: number, request?: RequestFn,
-    private readonly onFailure?: (code: string, details: string) => void) {
+    private readonly onFailure?: (code: string, details: string) => void,
+    private readonly recoverSession?: (credentials: SessionCredentials) => Promise<void>) {
     const rawRequest = request ?? requestHttps(timeoutMs);
     this.request = async (method, path, headers, body) => {
       const credentials = this.sessions.getCredentials();
-      const secrets = [...(credentials?.cookies.map(c => c.value) ?? []), credentials?.csrfToken ?? ''];
+      const secrets = [...(credentials?.cookies.map(c => c.value) ?? []), ...(credentials?.loginCookies?.map(c => c.value) ?? []), credentials?.csrfToken ?? ''];
       try {
-        const response = await rawRequest(method, path, headers, body);
+        let sentCookie = headers.Cookie;
+        let response = await rawRequest(method, path, headers, body);
         if (credentials && this.sessions.getCredentials() !== credentials) throw new Error('SESSION_CHANGED');
+        if (credentials && this.recoverSession && response.status === 401 &&
+          (response.body as { code?: unknown } | null)?.code === 'not_login') {
+          // Retry only an explicit unauthenticated rejection, never an ambiguous send.
+          // Another request may already have renewed this exact credential object.
+          if (sentCookie === this.headers(credentials).Cookie) await this.repair(credentials);
+          if (this.sessions.getCredentials() !== credentials) throw new Error('SESSION_CHANGED');
+          sentCookie = this.headers(credentials).Cookie;
+          response = await rawRequest(method, path, { ...headers, ...this.headers(credentials) }, body);
+          if (this.sessions.getCredentials() !== credentials) throw new Error('SESSION_CHANGED');
+        }
+        if (credentials && response.status >= 200 && response.status < 300 && sentCookie === this.headers(credentials).Cookie) {
+          const setCookie = response.headers?.['set-cookie'];
+          if (setCookie) await this.sessions.updateCookies(Array.isArray(setCookie) ? setCookie.map(String) : [String(setCookie)], credentials, sentCookie);
+        }
+        secrets.push(...(credentials?.cookies.map(c => c.value) ?? []), ...(credentials?.loginCookies?.map(c => c.value) ?? []));
         if (response.status < 200 || response.status >= 300) {
           response.details = diagnosticText({ method, endpoint: path, httpStatus: response.status,
             contentType: response.contentType, responseHeaders: response.headers ?? {}, response: response.body }, secrets);
@@ -67,6 +85,7 @@ export class LineClient {
         return response;
       } catch (error) {
         if (error instanceof Error && error.message === 'SESSION_CHANGED') throw error;
+        if (error instanceof LineError) throw error;
         const details = diagnosticText({ method, endpoint: path, networkError: networkDetails(error) }, secrets);
         this.onFailure?.('LINE_NETWORK_ERROR', details);
         throw new LineError('NETWORK', undefined, details, 'LINE_NETWORK_ERROR');
@@ -74,10 +93,27 @@ export class LineClient {
     };
   }
 
+  private async repair(credentials: SessionCredentials): Promise<void> {
+    if (this.recovery?.credentials === credentials) return this.recovery.promise;
+    const promise = (async () => {
+      try { await this.recoverSession!(credentials); }
+      catch (error) {
+        if (error instanceof Error && error.message === 'SESSION_CHANGED') throw error;
+        const code = error instanceof Error && /^LOGIN_[A-Z0-9_]+$/.test(error.message) ? error.message : 'LOGIN_RECOVERY_FAILED';
+        const kind = /(?:REAUTH_REQUIRED|HTTP_401)$/.test(code) ? 'AUTH' : /HTTP_429$|RATE_LIMITED$/.test(code) ? 'RATE_LIMIT'
+          : /HTTP_403$/.test(code) ? 'CSRF' : /NETWORK|TIMEOUT|BUSY/.test(code) ? 'NETWORK' : 'INVALID_RESPONSE';
+        // The original operation was rejected before submission, even if recovery went offline.
+        throw new LineError(kind, 401, undefined, code);
+      }
+    })();
+    this.recovery = { credentials, promise };
+    try { await promise; } finally { if (this.recovery?.promise === promise) this.recovery = undefined; }
+  }
+
   private invalid(response: RawResponse, code: string, endpoint: string): LineError {
     const credentials = this.sessions.getCredentials();
     const details = diagnosticText({ endpoint, httpStatus: response.status, contentType: response.contentType,
-      responseHeaders: response.headers ?? {}, response: response.body }, [...(credentials?.cookies.map(c => c.value) ?? []), credentials?.csrfToken ?? '']);
+      responseHeaders: response.headers ?? {}, response: response.body }, [...(credentials?.cookies.map(c => c.value) ?? []), ...(credentials?.loginCookies?.map(c => c.value) ?? []), credentials?.csrfToken ?? '']);
     this.onFailure?.(code, details);
     return new LineError('INVALID_RESPONSE', response.status, details, code);
   }
@@ -150,7 +186,8 @@ export class LineClient {
     let response: RawResponse;
     try {
       response = await this.request('POST', `/api/v1/bots/${encodeURIComponent(credentials.botId)}/chats/${encodeURIComponent(chatId)}/messages/send`, headers, payload);
-    } catch {
+    } catch (error) {
+      if (error instanceof LineError && error.status === 401) return { result: 'FAILED', sendId, status: 401, error: error.kind, error_name: error.code, details: error.details };
       return { result: 'UNKNOWN', sendId, error: 'NETWORK_OR_TIMEOUT' };
     }
     if (response.status === 200) return { result: 'SUBMITTED', sendId, status: 200 };
@@ -169,7 +206,8 @@ export class LineClient {
     let upload: RawResponse;
     try {
       upload = await this.request('POST', `/api/v1/bots/${encodeURIComponent(credentials.botId)}/messages/${encodeURIComponent(chatId)}/uploadFile`, uploadHeaders, multipart);
-    } catch {
+    } catch (error) {
+      if (error instanceof LineError && error.status === 401) return { result: 'FAILED', sendId, status: 401, error: error.kind, error_name: error.code, details: error.details };
       return { result: 'UNKNOWN', sendId, error: 'UPLOAD_NETWORK_OR_TIMEOUT' };
     }
     if (upload.status < 200 || upload.status >= 300) {
@@ -186,7 +224,8 @@ export class LineClient {
     let response: RawResponse;
     try {
       response = await this.request('POST', `/api/v1/bots/${encodeURIComponent(credentials.botId)}/chats/${encodeURIComponent(chatId)}/messages/bulkSendFiles`, sendHeaders, payload);
-    } catch {
+    } catch (error) {
+      if (error instanceof LineError && error.status === 401) return { result: 'FAILED', sendId, status: 401, error: error.kind, error_name: error.code, details: error.details };
       return { result: 'UNKNOWN', sendId, error: 'NETWORK_OR_TIMEOUT' };
     }
     if (response.status >= 200 && response.status < 300) return { result: 'SUBMITTED', sendId, status: response.status };

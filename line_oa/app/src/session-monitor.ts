@@ -10,7 +10,7 @@ export function sessionIdleDelayMs(): number {
   return SESSION_IDLE_DELAY_MS + randomInt(SESSION_IDLE_JITTER_MS + 1);
 }
 
-/** Read-only LINE probes. Never sends messages, starts QR, or renews login. */
+/** Checks/recovery use read-only chat APIs and never start QR or send messages. */
 export class SessionMonitor {
   private timer?: NodeJS.Timeout;
   private active?: Promise<void>;

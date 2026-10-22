@@ -2,7 +2,7 @@ name: Publish standalone web image
 
 on:
   push:
-    tags: ['**']
+    tags: ['v*']
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +19,27 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Find branches containing the tagged commit
+        id: branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Tags have no source branch; include every remote branch containing this commit.
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+          {
+            echo 'tags<<BRANCH_TAGS'
+            while IFS= read -r branch; do
+              branch="${branch#refs/remotes/origin/}"
+              [[ "$branch" == 'HEAD' ]] && continue
+              # Docker tags cannot contain slashes or start with a dot or hyphen.
+              branch=$(printf '%s' "$branch" | sed 's/[^a-zA-Z0-9_.-]/-/g; s/^[.-]/_/')
+              printf 'type=raw,value=%s\n' "${branch:0:128}"
+            done < <(git for-each-ref --contains HEAD --format='%(refname)' refs/remotes/origin/)
+            echo 'BRANCH_TAGS'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -41,7 +62,7 @@ jobs:
           tags: |
             type=ref,event=tag
             type=raw,value=latest
-            type=sha,prefix=sha-
+            ${{ steps.branches.outputs.tags }}
 
       - name: Build and publish image
         uses: docker/build-push-action@v6

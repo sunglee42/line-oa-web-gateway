@@ -3,12 +3,14 @@ import { randomUUID } from 'node:crypto';
 import type { GatewayConfig } from './types.js';
 import { atomicWriteJson, ensurePrivateDir, readJsonSafe } from './storage.js';
 
-export const DATA_DIR = process.env.DATA_DIR || '/data';
+// The standalone application keeps all state in a local directory by default.
+// Set DATA_DIR when deploying with a volume (for example, in Docker).
+export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 
 export const DEFAULT_CONFIG: GatewayConfig = {
   instanceId: '',
   listenHost: '0.0.0.0',
-  port: 8787,
+  port: Number(process.env.PORT) || 8787,
   contactsCacheTtlMs: 600_000,
   uiAuthEnabled: false,
   apiEnabled: false,
@@ -39,8 +41,8 @@ export async function loadConfig(dataDir = DATA_DIR): Promise<{ config: GatewayC
   if (config.instanceId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.instanceId)) throw new Error('INSTANCE_ID_CORRUPT_RESTORE_BACKUP');
   const configChanged = !config.instanceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.instanceId);
   if (configChanged) config.instanceId = randomUUID();
-  config.listenHost = '0.0.0.0';
-  config.port = 8787;
+  config.listenHost = process.env.HOST || '0.0.0.0';
+  config.port = Number(process.env.PORT) || config.port;
   config.apiEnabled = true;
   config.uiAuthEnabled = false;
 

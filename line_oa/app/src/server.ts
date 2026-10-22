@@ -4,7 +4,6 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PairingManager, PairingError } from './pairing.js';
 import { DiscoveryPublisher, supervisorRequest, type SupervisorRequest } from './discovery.js';
-import { trustedIngress, ingressPath, ingressMutationAllowed } from './ingress.js';
 import { DATA_DIR, loadConfig } from './config.js';
 import { MemoryLogger } from './logger.js';
 import { SessionManager } from './session.js';
@@ -23,7 +22,6 @@ export interface GatewayOptions {
   lineRequest?: RequestFn;
   qrLogin?: BusinessQrLogin;
   supervisor?: SupervisorRequest;
-  ingressTrust?: typeof trustedIngress;
   sessionCheckDelayMs?: () => number;
 }
 
@@ -205,8 +203,6 @@ async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: stri
 
 const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
   try {
-    if (!(options.ingressTrust ?? trustedIngress)(req) || !ingressPath(req)) return json(res, 403, { error: 'INGRESS_REQUIRED' });
-    if (!ingressMutationAllowed(req)) return json(res, 403, { error: 'ORIGIN_REJECTED' });
     const requestUrl = new URL(req.url ?? '/', 'http://localhost');
     const path = requestUrl.pathname;
     if (path.startsWith('/api/v1/')) return json(res, 404, { error: 'NOT_FOUND' });
@@ -220,7 +216,7 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
       let browser = auth.browserSession(req.headers.cookie);
       if (!config.uiAuthEnabled && !browser) {
         const created = auth.anonymousSession();
-        res.setHeader('Set-Cookie', scopedCookie(created.cookie, req));
+        res.setHeader('Set-Cookie', standaloneCookie(created.cookie, req));
         browser = { token: '', csrf: created.csrf };
       }
       return json(res, 200, { authenticated: !!browser, setupRequired: config.uiAuthEnabled && auth.setupRequired(), authRequired: config.uiAuthEnabled, ...(browser ? { csrfToken: browser.csrf } : {}) });
@@ -235,7 +231,7 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === 'POST' && path === '/api/auth/logout' && browser) {
       qrLogin.cancel(browser.token);
-      auth.logout(browser.token); res.setHeader('Set-Cookie', scopedCookie(auth.clearCookie(), req)); return json(res, 200, { ok: true });
+      auth.logout(browser.token); res.setHeader('Set-Cookie', standaloneCookie(auth.clearCookie(), req)); return json(res, 200, { ok: true });
     }
     if (req.method === 'POST' && path === '/api/session/logout') {
       if (sender.isBusy()) throw new Error('SEND_BUSY');
@@ -329,9 +325,9 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
   }
 };
 
-function scopedCookie(cookie: string, req: IncomingMessage): string {
+function standaloneCookie(cookie: string, req: IncomingMessage): string {
   const secure = req.headers['x-forwarded-proto'] === 'https' || req.headers.origin?.startsWith('https://');
-  return cookie.replace('Path=/;', `Path=${ingressPath(req)}/;`) + (secure ? '; Secure' : '');
+  return cookie.replace('Path=/;', 'Path=/;') + (secure ? '; Secure' : '');
 }
 const uiServer = http.createServer(handleUi);
 const apiServer = http.createServer(async (req, res) => {
@@ -355,16 +351,23 @@ const apiServer = http.createServer(async (req, res) => {
     handleV1Error(res, error);
   }
 });
-for (const server of [uiServer, apiServer]) { server.requestTimeout = 20_000; server.headersTimeout = 10_000; }
+// One listener makes the UI and public API usable without an Ingress proxy.
+const standaloneServer = http.createServer((req, res) => {
+  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+  (path.startsWith('/api/v1/') ? apiServer : uiServer).emit('request', req, res);
+});
+for (const server of [uiServer, apiServer, standaloneServer]) { server.requestTimeout = 20_000; server.headersTimeout = 10_000; }
 let stopping: Promise<void> | undefined;
 return {
-  pairing, discovery, sessions, contacts, auth, uiServer, apiServer,
-  async start(apiPort = 8787, uiPort = 8099, host = '0.0.0.0') {
+  pairing, discovery, sessions, contacts, auth, uiServer: standaloneServer, apiServer,
+  // The second positional argument is retained only so existing embedded callers
+  // can upgrade without a TypeScript break. The standalone server has one port.
+  async start(port = config.port, _legacyUiPort?: number, host = config.listenHost) {
     const listen = (server: http.Server, port: number) => new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, host, () => { server.off('error', reject); resolve(); });
     });
-    try { await listen(apiServer, apiPort); await listen(uiServer, uiPort); }
+    try { await listen(standaloneServer, port); }
     catch (error) { await this.stop(); throw error; }
     logger.add('SERVER_START', 'SUCCESS');
     discovery?.start();
@@ -382,9 +385,9 @@ return {
       const close = (server: http.Server) => new Promise<void>(resolve => {
         server.close(() => resolve()); server.closeIdleConnections();
       });
-      const deadline = setTimeout(() => { apiServer.closeAllConnections(); uiServer.closeAllConnections(); }, 20_000);
+      const deadline = setTimeout(() => { standaloneServer.closeAllConnections(); }, 20_000);
       deadline.unref();
-      try { await Promise.all([close(apiServer), close(uiServer)]); await images.cleanup(); }
+      try { await close(standaloneServer); await images.cleanup(); }
       finally { clearTimeout(deadline); }
     })();
     return stopping;

@@ -241,6 +241,12 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
       logger.add('LINE_LOGOUT', 'SUCCESS');
       return json(res, 200, sessions.getStatus());
     }
+    if (req.method === 'GET' && path === '/api/api-key') return json(res, 200, auth.apiKeyInfo());
+    if (req.method === 'POST' && path === '/api/api-key') {
+      const generated = await pairing.generateApiKey();
+      logger.add('API_KEY_GENERATE', 'SUCCESS');
+      return json(res, 200, generated);
+    }
     if (req.method === 'GET' && path === '/api/pairing/status') return json(res, 200, {
       ...pairing.status(), discovery_status: discovery?.status ?? 'unavailable'
     });

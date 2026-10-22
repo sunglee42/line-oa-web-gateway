@@ -61,3 +61,12 @@ curl http://localhost:8787/api/v1/status \
 
 The original LINE service interaction is unofficial. Use a dedicated account and
 keep the persistent data volume private: it contains LINE session credentials.
+
+### Manage API keys in the web UI
+
+Open Settings and find the API Key field. Click 申請 to generate a key,
+then copy it for use with `Authorization: Bearer <key>`. The full key is
+shown only after generation in the current page; the server stores only
+its hash. Reloading the page shows the configured status and creation time.
+Click 重新申請 to replace a lost key or rotate credentials. The old key
+immediately stops working; update every API client with the new key.

@@ -1,4 +1,5 @@
 let csrf='';
+let apiKeyConfigured=false;
 let timezone;
 let lineLogoutBusy=false;
 let aliases={};
@@ -45,7 +46,7 @@ async function status(){
   $('lastLogin').textContent=fmt(s.session.lastLoginAt);$('loginAge').textContent=Number.isFinite(s.session.loginAgeDays)?`${s.session.loginAgeDays} 天前`:'—';
   $('lastValidated').textContent=fmt(s.session.lastValidatedAt);$('lastSubmitted').textContent=fmt(s.lastSubmittedAt);$('latestError').textContent=s.latestError||'無';
   $('sessionReason').textContent=s.session.reason;$('version').textContent=s.version;$('footerVersion').textContent=`v${s.version}`;$('listen').textContent=`${s.settings.host}:${s.settings.port}`;
-  $('cacheTtl').textContent=`${s.settings.cacheTtlMs/60000} 分鐘`;$('apiEnabled').textContent=s.settings.apiEnabled?'已配對':'等待配對';$('imageEnabled').textContent=s.settings.imageSendingEnabled?'啟用':'停用';$('logout').hidden=!s.settings.uiAuthEnabled;
+  $('cacheTtl').textContent=`${s.settings.cacheTtlMs/60000} 分鐘`;$('imageEnabled').textContent=s.settings.imageSendingEnabled?'啟用':'停用';$('logout').hidden=!s.settings.uiAuthEnabled;
   $('logoutLine').hidden=!s.session.botIdConfigured;
   $('logoutLine').disabled=lineLogoutBusy;
   const badge=$('sessionBadge');badge.textContent=s.session.state;badge.className=`badge ${s.session.state==='CONNECTED'?'ok':['AUTH_REQUIRED','VALIDATING'].includes(s.session.state)?'neutral':'bad'}`;
@@ -112,10 +113,12 @@ async function logs(){
   if(!data.logs.length)list.textContent='尚無操作紀錄';
 }
 async function loadApiKey(){
-  const data=await api('api/pairing/status');
-  $('pairingState').textContent=data.paired?'已配對':'等待 Home Assistant 確認配對';
-  $('hacsState').textContent=data.hacs_connected?'已連線':data.paired?'尚未收到近期請求':'尚未配對';
-  $('discoveryState').textContent=data.discovery_status;
+  const data=await api('api/api-key');
+  apiKeyConfigured=data.configured;
+  $('apiKeyState').textContent=data.configured?'已設定':'尚未設定';
+  $('apiKeyCreated').textContent=data.createdAt?new Date(data.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})+' (UTC+8)':'—';
+  $('generateApiKey').textContent=data.configured?'重新申請':'申請';
+  $('apiKeyValue').placeholder=data.configured?'已設定；如未保存，請重新申請':'尚未申請 API Key';
 }
 
 $('loginForm').onsubmit=async e=>{e.preventDefault();$('loginError').textContent='';try{const data=await api('api/auth/login',{method:'POST',body:JSON.stringify({password:$('password').value})});csrf=data.csrfToken;$('password').value='';showApp();await refreshAll()}catch(err){$('loginError').textContent=err.message}};
@@ -133,7 +136,21 @@ $('startQrLogin').onclick=async()=>{qrCompletionHandled=false;renderQr({status:'
 $('cancelQrLogin').onclick=async()=>{try{renderQr(await api('api/session/qr/cancel',{method:'POST',body:'{}'}))}catch(error){renderQr({status:'error',hasQr:false,message:error.message})}};
 $('searchForm').onsubmit=e=>{e.preventDefault();loadContacts(false).catch(e=>alert(e.message))};$('refreshContacts').onclick=()=>loadContacts(true).catch(e=>alert(e.message));
 $('target').onchange=updateTargetInfo;$('copyTarget').onclick=async()=>{try{await navigator.clipboard.writeText($('targetAlias').value);$('copyStatus').textContent='已複製 target 別名。'}catch{$('targetAlias').select();$('copyStatus').textContent='無法自動複製，請手動複製已選取的內容。'}};
-$('resetPairing').onclick=async()=>{if(!confirm('重新配對會立即撤銷舊 API 憑證。請接著在 Home Assistant 的 LINE OA 整合按「重新驗證」完成配對。'))return;try{await api('api/pairing/reset',{method:'POST',body:'{}'});await loadApiKey()}catch(error){alert(error.message)}};
+$('generateApiKey').onclick=async()=>{
+  if(apiKeyConfigured&&!confirm('重新申請後，舊 API Key 會立即失效。確定繼續？'))return;
+  const button=$('generateApiKey');button.disabled=true;
+  $('apiKeyMessage').textContent='申請中…';
+  try{
+    const data=await api('api/api-key',{method:'POST',body:'{}'});
+    $('apiKeyValue').value=data.apiKey;$('copyApiKey').disabled=false;
+    $('apiKeyMessage').textContent='API Key 僅在申請後當次顯示，請複製保存。';
+    await Promise.all([loadApiKey(),status()]);
+  }catch(error){$('apiKeyMessage').textContent=error.message}finally{button.disabled=false}
+};
+$('copyApiKey').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('apiKeyValue').value);$('apiKeyMessage').textContent='已複製 API Key。'}
+  catch{$('apiKeyValue').select();$('apiKeyMessage').textContent='請手動複製已選取的 API Key。'}
+};
 $('sendForm').onsubmit=async e=>{e.preventDefault();const button=$('sendButton');button.disabled=true;$('sendResult').textContent='送出中…';try{const result=await api('api/messages/send',{method:'POST',body:JSON.stringify({target:$('target').value,message:$('message').value})});$('sendResult').className=result.result==='SUBMITTED'?'success':'error';$('sendResult').textContent=result.result==='SUBMITTED'?'發送成功':`${result.result}：不可自動重送。`;$('message').value='';await status()}catch(err){$('sendResult').className='error';$('sendResult').textContent=err.message}finally{button.disabled=false}};
 $('imageForm').onsubmit=async e=>{e.preventDefault();const button=$('imageButton');const file=$('imageFile').files[0];const target=$('target').value;if(!file||!target)return;button.disabled=true;$('imageResult').className='';$('imageResult').textContent='圖片上傳與發送中…';try{const response=await fetch(`api/messages/image?target=${encodeURIComponent(target)}`,{method:'POST',headers:{'Content-Type':file.type,'X-CSRF-Token':csrf},body:file});const result=await response.json().catch(()=>({error:'INVALID_RESPONSE'}));if(!response.ok)throw responseError(result,response.status);$('imageResult').className=result.result==='SUBMITTED'?'success':'error';$('imageResult').textContent=result.result==='SUBMITTED'?'發送成功':`${result.result}：不可自動重送。`;if(result.result==='SUBMITTED')$('imageFile').value='';await status()}catch(err){$('imageResult').className='error';$('imageResult').textContent=err.message}finally{button.disabled=false}};
 boot().catch(e=>{$('loginPanel').hidden=false;$('loginError').textContent=e.message});

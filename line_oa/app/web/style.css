@@ -9,6 +9,8 @@ h1{font-size:clamp(28px,5vw,46px);margin:0;letter-spacing:-.03em}h2{margin-top:0
 .badge{border:1px solid var(--line);padding:8px 14px;border-radius:999px}.badge.ok{background:#123d29;color:#77f0ae}.badge.bad{background:#472324;color:#ffaaaa}
 .card{background:rgba(19,32,29,.94);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 12px 35px #0004}.login{max-width:420px;margin:8vh auto}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}.metrics span{display:block;color:var(--muted);font-size:13px}.metrics strong{display:block;font-size:25px;margin-top:6px}
+#dashboard>.card:first-child{margin-bottom:14px}
+#generateApiKey{margin-top:14px}
 nav{display:flex;gap:8px;overflow:auto;margin-bottom:18px;padding-bottom:4px}
 button,input,select,textarea{font:inherit}button{border:0;border-radius:10px;background:var(--green);color:#052313;font-weight:700;padding:10px 15px;cursor:pointer}button.secondary,button.quiet{background:#233630;color:var(--text)}button:disabled{opacity:.55;cursor:not-allowed}nav button{white-space:nowrap;background:#172824;color:var(--muted)}nav button.active{color:#062315;background:var(--green)}nav .quiet{margin-left:auto}
 label{display:grid;gap:6px;margin:12px 0;color:var(--muted)}input,select,textarea{width:100%;background:#0d1715;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px}textarea{resize:vertical}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}

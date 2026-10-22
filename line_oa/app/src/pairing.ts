@@ -55,6 +55,17 @@ export class PairingManager {
     } finally { this.busy = false; }
   }
 
+  async generateApiKey(): Promise<{ apiKey: string; createdAt: string }> {
+    if (this.busy) throw new PairingError(409, 'PAIRING_BUSY');
+    this.busy = true;
+    try {
+      const generated = await this.auth.generateApiKey();
+      this.bootstrap = undefined;
+      this.lastAuthenticatedAt = undefined;
+      return generated;
+    } finally { this.busy = false; }
+  }
+
   async revoke(): Promise<void> {
     if (this.busy) throw new PairingError(409, 'PAIRING_BUSY');
     this.busy = true;

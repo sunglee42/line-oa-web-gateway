@@ -2,9 +2,7 @@ name: Publish standalone web image
 
 on:
   push:
-    branches: [standalone]
-    tags: ['v*']
-  workflow_dispatch:
+    tags: ['**']
 
 env:
   REGISTRY: ghcr.io
@@ -41,9 +39,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/standalone' }}
+            type=raw,value=latest
             type=sha,prefix=sha-
 
       - name: Build and publish image

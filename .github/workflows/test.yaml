@@ -2,8 +2,7 @@ name: Build and smoke test standalone web gateway
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    tags: ['**']
 
 permissions:
   contents: read

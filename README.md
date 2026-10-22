@@ -21,7 +21,8 @@
 - 一般的 Web UI 管理介面、自動探索與一次性配對交換。
 - 當地時區日誌、失敗回應詳情與憑證遮蔽。
 - 預建映像安裝(可直接用docker啟動)
-TODO... 預建映像安裝; 整理檔案; 整理文件;
+
+TODO... 整理舊檔案; 整理舊文件;
 
 | 需求 | 說明 |
 | --- | --- |
@@ -36,7 +37,7 @@ TODO... 預建映像安裝; 整理檔案; 整理文件;
 - 專案主要是透過 Codex 進行調整，並由人類做Review與小調整，但仍可能有非人為的錯誤風險。
 - 本質上是從源專案撥離 HA 的部分，讓其可以獨立於Docker容器中運作，流程上目前可能有所缺失。  
 - 雖然已可運作，但既有的程式仍尚待清理，文件也是(包還佈署相關流程)。
-  
+
 Codex 給的[獨立版操作文件](README-WEB.md) <= 之後整理完後會重寫
 
 ## 佈署
@@ -57,6 +58,7 @@ Codex 給的[獨立版操作文件](README-WEB.md) <= 之後整理完後會重�
    curl http://localhost:8787/api/v1/status -H "Authorization: Bearer loagw_your_key_here"
    ```
    成功時預期會看到 `{"instance_id":"XXX","api_version":1,"version":"0.1.9","gateway_status":"online","line_logged_in":true,"session_status":"ready","account_name":"帳號/群組別名","last_error":"XXX","時間"}`
+7. 完成布署
 
 原版的[API說明文件](docs/api-compatibility.md) <= 未來可能會修正
 

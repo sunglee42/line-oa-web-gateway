@@ -1,6 +1,14 @@
+import { randomInt } from 'node:crypto';
 import { LineClient, LineError } from './line-client.js';
 import { SessionManager } from './session.js';
 import { MemoryLogger } from './logger.js';
+
+export const SESSION_JITTER_MIN_MS = 60_000;
+export const SESSION_JITTER_MAX_MS = 10 * 60_000;
+
+export function sessionIdleDelayMs(minutes: number): number {
+  return minutes * 60_000 + randomInt(SESSION_JITTER_MIN_MS, SESSION_JITTER_MAX_MS + 1);
+}
 
 /** Checks/recovery use read-only chat APIs and never start QR or send messages. */
 export class SessionMonitor {
@@ -12,7 +20,7 @@ export class SessionMonitor {
 
   constructor(private readonly sessions: SessionManager, private readonly client: LineClient,
     private readonly logger: MemoryLogger, private readonly busy: () => boolean,
-    private intervalMinutes = 45, private readonly testDelayMs?: () => number) {}
+    private intervalMinutes = 45, private readonly nextDelayMs: (minutes: number) => number = sessionIdleDelayMs) {}
 
   get enabled(): boolean { return this.intervalMinutes > 0; }
 
@@ -28,13 +36,20 @@ export class SessionMonitor {
     if (this.started && !this.stopped) this.schedule();
   }
 
+  /** Restart the idle window only after an actual upstream send attempt. */
+  messageSent(): void {
+    if (!this.started || this.stopped || !this.enabled) return;
+    ++this.generation;
+    this.schedule();
+  }
+
   private schedule(): void {
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.enabled) return;
     const generation = this.generation;
     this.timer = setTimeout(() => { this.timer = undefined; void this.cycle(generation); },
-      this.testDelayMs?.() ?? this.intervalMinutes * 60_000);
+      this.nextDelayMs(this.intervalMinutes));
     this.timer.unref();
   }
 

@@ -31,7 +31,7 @@ export interface GatewayOptions {
 
 export async function createGateway(options: GatewayOptions = {}) {
 const dataDir = options.dataDir ?? DATA_DIR;
-const version = '0.1.11';
+const version = '0.1.12';
 const startedAt = Date.now();
 const webDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
 const { config, warning: configWarning } = await loadConfig(dataDir);
@@ -50,7 +50,7 @@ if (contacts.warning) logger.add('CONTACTS_CONFIG', 'WARNING', undefined, contac
 const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), config.sessionCheckIntervalMinutes, options.sessionCheckDelayMs);
 const images = new ImageSender(join(dataDir, 'tmp'), config.maxImageBytes, config.maxTempBytes);
 await images.init();
-const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute, () => {}, {}, images, () => config.sessionCheckIntervalMinutes > 0);
+const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute, () => sessionMonitor.messageSent(), {}, images, () => config.sessionCheckIntervalMinutes > 0);
 const auth = new AuthManager(dataDir, config.secureCookies);
 await auth.load();
 const pairing = new PairingManager(auth, config.instanceId);

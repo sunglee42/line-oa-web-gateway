@@ -162,7 +162,7 @@ $('generalLogsTab').onclick=()=>selectLogView('general');
 $('autoLoginLogsTab').onclick=()=>selectLogView('automatic');
 $('sessionCheckForm').onsubmit=async event=>{
   event.preventDefault();const result=$('sessionCheckResult');result.textContent='';$('saveSessionCheck').disabled=true;
-  try{const data=await api('api/settings',{method:'PUT',body:JSON.stringify({sessionCheckIntervalMinutes:Number($('sessionCheckMinutes').value)})});$('sessionCheckMinutes').value=data.sessionCheckIntervalMinutes;result.className='success';result.textContent=data.sessionCheckIntervalMinutes===0?'已停用定時檢查；發送遇到登入失效時才嘗試自動恢復。':`已設定為每 ${data.sessionCheckIntervalMinutes} 分鐘檢查，從現在重新計時。`}
+  try{const data=await api('api/settings',{method:'PUT',body:JSON.stringify({sessionCheckIntervalMinutes:Number($('sessionCheckMinutes').value)})});$('sessionCheckMinutes').value=data.sessionCheckIntervalMinutes;result.className='success';result.textContent=data.sessionCheckIntervalMinutes===0?'已停用定時檢查；發送遇到登入失效時才嘗試自動恢復。':`已設定閒置 ${data.sessionCheckIntervalMinutes} 分鐘再加隨機 1～10 分鐘後檢查；再次發送會重新計時。`}
   catch(error){result.className='error';result.textContent=error.message}finally{$('saveSessionCheck').disabled=false}
 };
 $('refreshLogs').onclick=()=>logs().catch(error=>alert(error.message));

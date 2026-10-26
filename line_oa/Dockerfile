@@ -10,7 +10,7 @@ COPY app/web ./web
 RUN npm test
 
 FROM node:24-bookworm-slim AS runtime
-ARG BUILD_VERSION=0.1.11
+ARG BUILD_VERSION=0.1.12
 ARG TARGETARCH
 ARG BUILD_ARCH=amd64
 # Docker uses arm64; Home Assistant uses aarch64. Reject a mislabeled image.

@@ -272,3 +272,35 @@ test('zero permits recovery only for a failed send, not manual validation or con
     assert.equal(history.length, 1); assert.equal(history[0].trigger, 'send');
   } finally { await h?.gateway.stop(); await rm(dir, { recursive: true, force: true }); }
 });
+
+test('real text and image API handlers reset the shared background idle deadline', { timeout: 10_000 }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'line-oa-api-idle-'));
+  let h: Awaited<ReturnType<typeof running>> | undefined, csrfChecks = 0, contactChecks = 0;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const contactWaiters = new Map<number, () => void>();
+  const settleContacts = async (expected: number) => {
+    if (contactChecks < expected) await new Promise<void>(resolve => contactWaiters.set(expected, resolve));
+    assert.equal(contactChecks, expected); await nextTurn();
+  };
+  try {
+    await seed(dir, 45);
+    h = await running(dir, { sessionCheckDelayMs: () => 60_000, lineRequest: async (_method, path) => {
+      if (path.includes('csrfToken')) { csrfChecks++; return { status: 200, contentType: 'application/json', body: { token: 'synthetic-csrf' } }; }
+      if (path.includes('/contacts?')) { contactChecks++; contactWaiters.get(contactChecks)?.(); contactWaiters.delete(contactChecks); return { status: 200, contentType: 'application/json', body: { list: [] } }; }
+      return { status: 200, contentType: 'application/json', body: path.endsWith('/uploadFile') ? { contentMessageToken: 'synthetic-upload' } : {} };
+    } });
+    const key = await pair(h.gateway); await settleContacts(1);
+    t.mock.timers.tick(59_000);
+    const text = await fetch(`${h.api}/api/v1/messages/text`, { method: 'POST', headers: { ...key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ who: 'home', message: 'synthetic idle test', request_id: randomUUID() }) });
+    assert.equal(text.status, 202); assert.equal(csrfChecks, 2);
+    t.mock.timers.tick(1000); await nextTurn(); assert.equal(csrfChecks, 2, 'old startup deadline must be cancelled');
+    t.mock.timers.tick(58_000);
+    const form = new FormData(); form.set('who', 'home'); form.set('request_id', randomUUID());
+    form.set('image', new Blob([Buffer.from([137,80,78,71,13,10,26,10,1])], { type: 'image/png' }), 'synthetic.png');
+    const image = await fetch(`${h.api}/api/v1/messages/image`, { method: 'POST', headers: key, body: form });
+    assert.equal(image.status, 202); assert.equal(csrfChecks, 3);
+    t.mock.timers.tick(59_999); await nextTurn(); assert.equal(csrfChecks, 3, 'image must replace the text idle deadline');
+    t.mock.timers.tick(1); assert.equal(csrfChecks, 4); await settleContacts(4);
+  } finally { await h?.gateway.stop(); await rm(dir, { recursive: true, force: true }); }
+});

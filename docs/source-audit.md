@@ -19,7 +19,7 @@
 - `server.ts`：雙listener、可注入Mock、Ingress驗證、配對路由、啟停清理。
 - 新增`pairing.ts`、`discovery.ts`、`ingress.ts`。
 - `auto-login-history.ts`：保存最近 200 筆恢復嘗試的時間、來源與結果，不保存回應本文或憑證。
-- `session-monitor.ts`：按使用者設定的分鐘數檢查；0 停用啟動與背景檢查，設定經 Ingress／CSRF 驗證後持久保存。
+- `session-monitor.ts`：依最後一次實際發送重新計算閒置期限，加入固定範圍的隨機延遲；0 停用啟動與背景檢查，設定經 Ingress／CSRF 驗證後持久保存。
 - `config.ts`：DATA_DIR=/data、固定容器listener、永久身份損壞fail closed。
 - `auth.ts`：憑證損壞fail closed、可指定cookie scope、CSRF byte-length檢查。
 - `storage.ts`：讀取既有檔強制0600、寫入後fsync目錄。

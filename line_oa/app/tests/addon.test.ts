@@ -128,7 +128,7 @@ test('actual socket, not forwarded user headers, protects Ingress; API port excl
       assert.equal((await fetch(h.api + path)).status, 404);
     }
     const health = await (await fetch(h.api + '/api/v1/health')).json();
-    assert.deepEqual(health, { status: 'ok', version: '0.1.10', api_version: 1 });
+    assert.deepEqual(health, { status: 'ok', version: '0.1.11', api_version: 1 });
     for (const path of ['/api/v1/status', '/api/v1/aliases']) assert.equal((await fetch(h.api + path)).status, 401);
     const b = payload(h.gateway.pairing);
     assert.equal((await fetch(h.api + '/api/v1/pairing/exchange', { method: 'POST', headers: { Origin: 'http://attacker', 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).status, 403);
@@ -216,7 +216,7 @@ test('real API text/image contract, UNKNOWN deduplication, alias validation and 
     h.gateway.sessions.mark('EXPIRED', 'mock expiry');
     assert.equal((await postText({ who: 'simon', message: 'expired' })).status, 409);
     assert.equal(textPosts, 2);
-    await assert.rejects(readFile(join(dir, 'contacts.json')), { code: 'ENOENT' });
+    assert.equal(JSON.parse(await readFile(join(dir, 'contacts.json'), 'utf8')).contacts[0].chatId, chatId);
   } finally { await h.close(); }
 });
 

@@ -18,7 +18,7 @@ export class MessageSender {
   constructor(private readonly client: LineClient, private readonly sessions: SessionManager, private readonly contacts: ContactService,
     private readonly logger: MemoryLogger, private readonly duplicateWindowMs: number, private readonly rateLimit: number,
     private readonly onMessageSent: () => void = () => {}, queueOptions: SendQueueOptions = {},
-    private readonly images?: ImageSender) {
+    private readonly images?: ImageSender, private readonly preflightEnabled: () => boolean = () => true) {
     this.queue = new SendQueue(queueOptions);
   }
 
@@ -71,8 +71,8 @@ export class MessageSender {
         for (const [key, at] of this.recent) if (now - at > this.duplicateWindowMs * 2) this.recent.delete(key);
         if (this.rateLimit > 0) this.rate.push(now);
         try {
-          await this.client.validate();
-          this.sessions.mark('CONNECTED', 'Session 驗證成功');
+          if (this.preflightEnabled()) await this.client.validate('send');
+          if (this.preflightEnabled()) this.sessions.mark('CONNECTED', 'Session 驗證成功');
         } catch (error) {
           if (this.sessions.getCredentials() !== credentials) throw new Error('SEND_CONTEXT_CHANGED');
           const kind = error instanceof LineError ? error.kind : 'NETWORK';
@@ -85,7 +85,8 @@ export class MessageSender {
         if (this.sessions.getCredentials() !== credentials) throw new Error('SEND_CONTEXT_CHANGED');
         if (this.contacts.resolve(alias)?.chatId !== target.chatId) throw new Error('TARGET_NOT_ALLOWED');
         const result = await deliver(current.chatId);
-        if (result.result === 'SUBMITTED') {
+        if (result.result === 'SUBMITTED' || result.result === 'CONFIRMED') {
+          this.sessions.mark('CONNECTED', 'LINE 訊息提交成功');
           this.submittedCount += 1;
           this.lastSubmittedAt = new Date().toISOString();
         } else if (result.error === 'AUTH') this.sessions.mark('EXPIRED', 'LINE Session 已失效，需要人工重新授權');

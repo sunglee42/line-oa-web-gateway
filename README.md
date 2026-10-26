@@ -18,6 +18,7 @@
 - LINE QR Code／PIN 登入、官方帳號選擇及登出。
 - 聯絡人查詢、重新整理與收件者別名白名單。
 - 文字、單張 JPEG／PNG 圖片（最大 10 MiB）及供整合呼叫的 HTTP API v1。
+- 文字與圖片共用發送佇列，按進入佇列的順序逐筆處理；取消 Add-on 本地每分鐘發送上限。
 - Home Assistant Ingress 管理介面、自動探索與一次性配對交換。
 - 當地時區日誌、失敗回應詳情與憑證遮蔽。
 - 預建映像安裝；備份保存設定與登入資料，還原時重新下載映像，排除暫存、快取與日誌。
@@ -129,8 +130,11 @@ HACS 安裝、配對、Home Assistant Actions 與自動化使用方式，請直�
 | `LOGIN_BUSINESS_CSRF_MISSING` | LINE 登入頁與預期格式不同；查看遮蔽後的回應，提供版本與錯誤名稱回報 |
 | Home Assistant 整合或 Actions 問題 | 請參閱 [HACS repo 的說明](https://github.com/xangin/line-oa-hacs#readme) |
 | `UNKNOWN` | 不自動重送，先確認 LINE 是否已收到 |
+| 排隊逾時／佇列已滿 | 訊息尚未送出；稍後重新呼叫。等待中的請求斷線或服務停止時會取消，不會延後補發 |
 
 日誌依 HA 提供的當地時區顯示；「紀錄」可以展開失敗系統回應。憑證會遮蔽，但內容仍可能包含帳號或對象資訊，公開回報前請自行檢查。
+
+發送佇列保存在記憶體，同時最多保留 32 筆（含正在執行的訊息），內容合計最多 20 MiB；等待超過 10 秒會明確回報尚未發送，避免超過現有 HACS 請求等待時間。輪到發送時會重新核對收件者別名與登入帳號。已開始處理的訊息若回應遺失，仍可能已送達，維持 `UNKNOWN` 不自動重送。LINE 本身的限制照常回報。
 
 [故障排除](docs/troubleshooting.md) · [回報問題](https://github.com/xangin/line-oa-ha-addon/issues/new/choose) · [安全回報](SECURITY.md)
 

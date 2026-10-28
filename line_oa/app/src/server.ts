@@ -4,8 +4,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PairingManager, PairingError } from './pairing.js';
 import { DiscoveryPublisher, supervisorRequest, type SupervisorRequest } from './discovery.js';
-import { DATA_DIR, loadConfig } from './config.js';
+import { ingressMutationAllowed } from './ingress.js';
+import { DATA_DIR, loadConfig, validSessionCheckMinutes } from './config.js';
 import { MemoryLogger } from './logger.js';
+import { AutoLoginHistory } from './auto-login-history.js';
+import { atomicWriteJson } from './storage.js';
 import { SessionManager } from './session.js';
 import { SessionMonitor } from './session-monitor.js';
 import { LineClient, LineError, type RequestFn } from './line-client.js';
@@ -27,7 +30,7 @@ export interface GatewayOptions {
 
 export async function createGateway(options: GatewayOptions = {}) {
 const dataDir = options.dataDir ?? DATA_DIR;
-const version = '0.1.9';
+const version = '0.1.12';
 const startedAt = Date.now();
 const webDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web');
 const { config, warning: configWarning } = await loadConfig(dataDir);
@@ -35,15 +38,18 @@ const logger = new MemoryLogger();
 if (configWarning) logger.add('CONFIG', 'WARNING', undefined, configWarning);
 const sessions = new SessionManager(dataDir);
 await sessions.load();
+const autoLoginHistory = new AutoLoginHistory(dataDir, logger);
+await autoLoginHistory.load();
 const qrLogin = options.qrLogin ?? new BusinessQrLogin(sessions, (operation, result, target, error, details) => logger.add(operation, result, target, error, details));
-const client = new LineClient(sessions, config.requestTimeoutMs, options.lineRequest, (code, details) => logger.add('LINE_UPSTREAM', 'FAILED', undefined, code, details), credentials => qrLogin.recover(credentials));
-const contacts = new ContactService(client, dataDir, config.contactsCacheTtlMs);
+const client = new LineClient(sessions, config.requestTimeoutMs, options.lineRequest, (code, details) => logger.add('LINE_UPSTREAM', 'FAILED', undefined, code, details), (credentials, trigger) => autoLoginHistory.run(trigger, () => qrLogin.recover(credentials)),
+  trigger => config.sessionCheckIntervalMinutes > 0 || trigger === 'send');
+const contacts = new ContactService(client, dataDir, config.contactsCacheTtlMs, () => sessions.getCredentials()?.botId ?? null);
 await contacts.load();
 if (contacts.warning) logger.add('CONTACTS_CONFIG', 'WARNING', undefined, contacts.warning);
-const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), options.sessionCheckDelayMs);
-const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute, () => sessionMonitor.messageSent());
+const sessionMonitor = new SessionMonitor(sessions, client, logger, () => sender.isBusy(), config.sessionCheckIntervalMinutes, options.sessionCheckDelayMs);
 const images = new ImageSender(join(dataDir, 'tmp'), config.maxImageBytes, config.maxTempBytes);
 await images.init();
+const sender = new MessageSender(client, sessions, contacts, logger, config.duplicateWindowMs, config.rateLimitPerMinute, () => sessionMonitor.messageSent(), {}, images, () => config.sessionCheckIntervalMinutes > 0);
 const auth = new AuthManager(dataDir, config.secureCookies);
 await auth.load();
 const pairing = new PairingManager(auth, config.instanceId);
@@ -97,6 +103,7 @@ async function bodyBuffer(req: IncomingMessage, maxBytes: number): Promise<Buffe
   return Buffer.concat(chunks);
 }
 function errorStatus(code: string): number {
+  if (code.startsWith('SEND_QUEUE_') || code === 'SEND_CONTEXT_CHANGED' || code === 'REQUEST_CACHE_FULL') return 503;
   if (['INVALID_INPUT', 'INVALID_JSON', 'INVALID_ALIAS', 'INVALID_MESSAGE', 'INVALID_TARGET'].includes(code)) return 400;
   if (['IMAGE_TYPE_NOT_ALLOWED', 'IMAGE_SIGNATURE_INVALID'].includes(code)) return 400;
   if (code === 'IMAGE_SIZE_LIMIT') return 413;
@@ -134,6 +141,14 @@ function handleV1Error(res: ServerResponse, error: unknown): void {
   if (code === 'REQUEST_ID_CONFLICT') return v1Error(res, 409, 'INVALID_REQUEST', 'request_id 已用於不同內容');
   if (code === 'DUPLICATE_BLOCKED') return v1Error(res, 409, 'DUPLICATE_REQUEST', '短時間內已提交相同內容');
   if (code === 'SEND_BUSY') return v1Error(res, 409, 'SEND_FAILED', '另一筆發送正在處理中');
+  if (code.startsWith('SEND_QUEUE_') || code === 'SEND_CONTEXT_CHANGED' || code === 'REQUEST_CACHE_FULL') {
+    const message = code === 'SEND_QUEUE_TIMEOUT' ? '發送排隊逾時，訊息尚未送出，請稍後重試'
+      : code === 'SEND_CONTEXT_CHANGED' ? '排隊期間帳號已變更，訊息尚未送出'
+      : code === 'SEND_QUEUE_CANCELLED' ? '發送請求已取消，訊息尚未送出'
+      : code === 'SEND_QUEUE_STOPPED' ? '服務正在停止，訊息尚未送出'
+      : '發送佇列已滿，訊息尚未送出，請稍後重試';
+    return v1Error(res, 503, 'GATEWAY_BUSY', message);
+  }
   if (code.startsWith('SESSION_')) return v1Error(res, 409, 'AUTH_REQUIRED', 'LINE Session 尚未準備完成');
   if (code === 'TEMP_CAPACITY_LIMIT') return v1Error(res, 503, 'INTERNAL_ERROR', '圖片暫存空間目前不可用');
   logger.add('API_V1', 'FAILED', undefined, code);
@@ -143,7 +158,17 @@ function handleV1Error(res: ServerResponse, error: unknown): void {
 function assertV1Session(): void {
   const state = sessions.getStatus().state;
   if (state === 'AUTH_REQUIRED') throw new Error('AUTH_REQUIRED');
-  if (state === 'EXPIRED') throw new Error('SESSION_EXPIRED');
+  if (state === 'EXPIRED' && config.sessionCheckIntervalMinutes > 0) throw new Error('SESSION_EXPIRED');
+}
+
+function requestSignal(req: IncomingMessage, res: ServerResponse): AbortSignal {
+  const controller = new AbortController();
+  const cancel = () => { if (!res.writableFinished) controller.abort(); };
+  req.once('aborted', cancel);
+  res.once('close', cancel);
+  res.once('finish', () => { req.off('aborted', cancel); res.off('close', cancel); });
+  if (req.aborted || res.destroyed) controller.abort();
+  return controller.signal;
 }
 
 async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
@@ -167,7 +192,7 @@ async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: stri
     const requestId = parseRequestId(body.request_id);
     const fingerprint = requestFingerprint(['text', who, body.message]);
     const result = await apiRequests.run(requestId, fingerprint, async () => {
-      const sent = await sender.send(who, body.message as string);
+      const sent = await sender.send(who, body.message as string, requestSignal(req, res));
       const response = sendResponse(requestId, sent);
       return { status: apiResultStatus(response, sent.error), body: response };
     });
@@ -188,12 +213,10 @@ async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: stri
     assertV1Session();
     const fingerprint = requestFingerprint(['image', form.who, mime, form.image]);
     const result = await apiRequests.run(requestId, fingerprint, async () => {
-      const staged = await images.stage(form.image, mime);
-      try {
-        const sent = await sender.sendImage(form.who, form.image, mime);
-        const response = sendResponse(requestId, sent);
-        return { status: apiResultStatus(response, sent.error), body: response };
-      } finally { await images.remove(staged); }
+      const signal = requestSignal(req, res);
+      const sent = await sender.sendImage(form.who, form.image, mime, signal);
+      const response = sendResponse(requestId, sent);
+      return { status: apiResultStatus(response, sent.error), body: response };
     });
     if (result.duplicate) logger.add('API_REQUEST_DUPLICATE', 'CACHED', form.who);
     return json(res, result.value.status, result.value.body);
@@ -201,8 +224,10 @@ async function handleApiV1(req: IncomingMessage, res: ServerResponse, path: stri
   return v1Error(res, 404, 'INVALID_REQUEST', '找不到指定的 API 路徑');
 }
 
+let settingsWrites: Promise<void> = Promise.resolve();
 const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
   try {
+    if (!ingressMutationAllowed(req)) return json(res, 403, { error: 'ORIGIN_REJECTED' });
     const requestUrl = new URL(req.url ?? '/', 'http://localhost');
     const path = requestUrl.pathname;
     if (path.startsWith('/api/v1/')) return json(res, 404, { error: 'NOT_FOUND' });
@@ -236,7 +261,7 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === 'POST' && path === '/api/session/logout') {
       if (sender.isBusy()) throw new Error('SEND_BUSY');
       qrLogin.close();
-      contacts.clearCache();
+      await contacts.clearCache();
       await sessions.logout();
       logger.add('LINE_LOGOUT', 'SUCCESS');
       return json(res, 200, sessions.getStatus());
@@ -290,6 +315,10 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
       try { await client.validate(); sessions.mark('CONNECTED', 'Session 驗證成功'); logger.add('SESSION_VALIDATE', 'SUCCESS'); return json(res, 200, sessions.getStatus()); }
       catch (error) { const kind = error instanceof LineError ? error.kind : 'NETWORK'; sessions.mark(kind === 'AUTH' ? 'EXPIRED' : kind === 'NETWORK' ? 'DISCONNECTED' : 'ERROR', `驗證失敗：${error instanceof LineError ? error.code : kind}`); const code = error instanceof LineError ? error.code : 'SESSION_VALIDATION_FAILED'; logger.add('SESSION_VALIDATE', 'FAILED', undefined, code); return json(res, 503, { ...sessions.getStatus(), error: code, error_name: code, ...(error instanceof LineError ? { upstream_status: error.status, details: error.details } : {}) }); }
     }
+    if (req.method === 'GET' && path === '/api/contacts/cache') {
+      await contacts.syncAccount();
+      return json(res, 200, { list: contacts.allCached(), cached: true, aliases: contacts.getAliases() });
+    }
     if (req.method === 'GET' && path === '/api/contacts') {
       const query = requestUrl.searchParams.get('query') ?? '';
       const next = requestUrl.searchParams.get('next') ?? undefined;
@@ -309,18 +338,35 @@ const handleUi = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === 'POST' && path === '/api/messages/send') {
       const body = await bodyJson(req); const target = typeof body.target === 'string' ? body.target : ''; const message = typeof body.message === 'string' ? body.message : '';
-      const result = await sender.send(target, message); return json(res, result.result === 'SUBMITTED' ? 202 : result.result === 'UNKNOWN' ? 202 : 502, result);
+      const result = await sender.send(target, message, requestSignal(req, res)); return json(res, result.result === 'SUBMITTED' ? 202 : result.result === 'UNKNOWN' ? 202 : 502, result);
     }
     if (req.method === 'POST' && path === '/api/messages/image') {
       const target = requestUrl.searchParams.get('target') ?? '';
       const type = String(req.headers['content-type'] ?? '').split(';', 1)[0]!.trim().toLowerCase();
       if (type !== 'image/jpeg' && type !== 'image/png') throw new Error('IMAGE_TYPE_NOT_ALLOWED');
       const buffer = await bodyBuffer(req, config.maxImageBytes);
-      const staged = await images.stage(buffer, type);
-      try {
-        const result = await sender.sendImage(target, buffer, type);
-        return json(res, result.result === 'SUBMITTED' || result.result === 'UNKNOWN' ? 202 : 502, result);
-      } finally { await images.remove(staged); }
+      images.validate(buffer, type);
+      const signal = requestSignal(req, res);
+      const result = await sender.sendImage(target, buffer, type, signal);
+      return json(res, result.result === 'SUBMITTED' || result.result === 'UNKNOWN' ? 202 : 502, result);
+    }
+    if (req.method === 'GET' && path === '/api/auto-login/logs') return json(res, 200, { logs: autoLoginHistory.list() });
+    if (req.method === 'GET' && path === '/api/settings') return json(res, 200, { sessionCheckIntervalMinutes: config.sessionCheckIntervalMinutes });
+    if (req.method === 'PUT' && path === '/api/settings') {
+      const body = await bodyJson(req);
+      if (!validSessionCheckMinutes(body.sessionCheckIntervalMinutes) || Object.keys(body).some(key => key !== 'sessionCheckIntervalMinutes')) throw new Error('INVALID_INPUT');
+      const minutes = body.sessionCheckIntervalMinutes;
+      // Serialize disk and RAM updates together, including overlapping browser saves.
+      const update = settingsWrites.then(async () => {
+        await atomicWriteJson(join(dataDir, 'config.json'), { ...config, sessionCheckIntervalMinutes: minutes });
+        config.sessionCheckIntervalMinutes = minutes;
+        sessionMonitor.configure(minutes);
+        if (!minutes && sessions.getStatus().state === 'VALIDATING') sessions.mark('VALIDATING', '已載入 Session；定時檢查已停用，等待發送或手動測試確認連線');
+      });
+      settingsWrites = update.catch(() => undefined);
+      await update;
+      logger.add('SETTINGS', 'SUCCESS');
+      return json(res, 200, { sessionCheckIntervalMinutes: minutes });
     }
     if (req.method === 'GET' && path === '/api/logs') return json(res, 200, { logs: logger.list() });
     return json(res, 404, { error: 'NOT_FOUND' });
@@ -380,11 +426,15 @@ return {
     sessionMonitor.start();
     // Resolve restored credentials once at startup; HA polls only the cached result.
     // Keep listeners responsive while validation (and any recovery) is in progress.
-    if (sessions.getStatus().state === 'VALIDATING') void sessionMonitor.check();
+    if (sessions.getStatus().state === 'VALIDATING') {
+      if (sessionMonitor.enabled) void sessionMonitor.check('startup_check');
+      else sessions.mark('VALIDATING', '已載入 Session；定時檢查已停用，等待發送或手動測試確認連線');
+    }
   },
   stop(): Promise<void> {
     if (stopping) return stopping;
     discovery?.stop();
+    sender.stop();
     sessionMonitor.stop();
     qrLogin.close();
     stopping = (async () => {
@@ -393,7 +443,7 @@ return {
       });
       const deadline = setTimeout(() => { standaloneServer.closeAllConnections(); }, 20_000);
       deadline.unref();
-      try { await close(standaloneServer); await images.cleanup(); }
+      try { await close(standaloneServer); await settingsWrites; await images.cleanup(); }
       finally { clearTimeout(deadline); }
     })();
     return stopping;

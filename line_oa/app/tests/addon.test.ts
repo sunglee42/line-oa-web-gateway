@@ -106,7 +106,7 @@ async function running(options: GatewayOptions = {}) {
   const dir = options.dataDir ?? await temp();
   const gateway = await createGateway({ ...options, dataDir: dir });
   await gateway.start(0, 0, '127.0.0.1');
-  const api = `http://127.0.0.1:${port(gateway.apiServer)}`;
+  const api = `http://127.0.0.1:${port(gateway.uiServer)}`;
   const ui = `http://127.0.0.1:${port(gateway.uiServer)}`;
   return { dir, gateway, api, ui, async close() { await gateway.stop(); await rm(dir, { recursive: true, force: true }); } };
 }
@@ -115,20 +115,20 @@ async function browserSession(ui: string) {
   const response = await fetch(`${ui}/api/auth/session`, { headers: ingressHeaders });
   const state = await response.json() as { csrfToken: string };
   const cookie = response.headers.get('set-cookie')!;
-  assert.match(cookie, /Path=\/api\/hassio_ingress\/mockprefix\//);
+  assert.match(cookie, /Path=\/;/);
   return { ...ingressHeaders, Cookie: cookie.split(';')[0]!, 'X-CSRF-Token': state.csrfToken };
 }
 
-test('actual socket, not forwarded user headers, protects Ingress; API port excludes management', async () => {
+test('standalone UI is public while management and API routes require their own authentication', async () => {
   const h = await running();
   try {
     assert.equal(trustedIngress({ socket: { remoteAddress: '172.30.32.2' } } as IncomingMessage), true);
-    assert.equal((await fetch(h.ui, { headers: { ...ingressHeaders, 'X-Remote-User-Id': 'admin', 'X-Forwarded-For': '172.30.32.2' } })).status, 403);
-    for (const path of ['/api/pairing/status', '/api/api-key', '/api/session/qr/start', '/']) {
-      assert.equal((await fetch(h.api + path)).status, 404);
+    assert.equal((await fetch(h.ui, { headers: { ...ingressHeaders, 'X-Remote-User-Id': 'admin', 'X-Forwarded-For': '172.30.32.2' } })).status, 200);
+    for (const path of ['/api/pairing/status', '/api/api-key', '/api/session/qr/start']) {
+      assert.equal((await fetch(h.api + path)).status, 401);
     }
     const health = await (await fetch(h.api + '/api/v1/health')).json();
-    assert.deepEqual(health, { status: 'ok', version: '0.1.9', api_version: 1 });
+    assert.deepEqual(health, { status: 'ok', version: '0.1.12', api_version: 1 });
     for (const path of ['/api/v1/status', '/api/v1/aliases']) assert.equal((await fetch(h.api + path)).status, 401);
     const b = payload(h.gateway.pairing);
     assert.equal((await fetch(h.api + '/api/v1/pairing/exchange', { method: 'POST', headers: { Origin: 'http://attacker', 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).status, 403);
@@ -143,7 +143,7 @@ test('Ingress relative assets, CSRF, QR routes, logout, reset and internal crede
     image() { return Buffer.from([137,80,78,71,13,10,26,10]); },
     async select(owner: string, choice: string) { assert.equal(owner, qrOwner); selection = choice; return { status: 'ok', hasQr: false }; }
   } as unknown as BusinessQrLogin;
-  const h = await running({ ingressTrust: () => true, qrLogin: qr });
+  const h = await running({ qrLogin: qr });
   try {
     const headers = await browserSession(h.ui);
     for (const path of ['/', '/index.html', '/app.js', '/style.css']) {
@@ -171,7 +171,7 @@ test('Ingress relative assets, CSRF, QR routes, logout, reset and internal crede
     const publicStatus = await (await fetch(h.api + '/api/v1/status', { headers: { Authorization: `Bearer ${key}` } })).json() as Record<string, unknown>;
     assert.equal(publicStatus.line_logged_in, false); assert.equal(publicStatus.session_status, 'auth_required');
     assert.equal(publicStatus.login_required_reason, 'not_logged_in');
-    assert.equal((await fetch(h.ui + '/api/v1/status', { headers })).status, 404);
+    assert.equal((await fetch(h.ui + '/api/v1/status', { headers })).status, 401);
     assert.equal((await fetch(h.ui + '/api/pairing/reset', { method: 'POST', headers })).status, 200);
     assert.equal((await fetch(h.api + '/api/v1/status', { headers: { Authorization: `Bearer ${key}` } })).status, 401);
     assert.equal((await fetch(h.ui + '/api/auth/logout', { method: 'POST', headers })).status, 200);
@@ -193,7 +193,7 @@ test('real API text/image contract, UNKNOWN deduplication, alias validation and 
   };
   const dir = await temp();
   await atomicWriteJson(join(dir, 'secrets/line-session.json'), { version: 1, botId: 'U' + randomBytes(16).toString('hex'), importedAt: new Date().toISOString(), cookies: [{ name: '__Host-chat-ses', value: secret() }] });
-  const h = await running({ dataDir: dir, lineRequest: request, ingressTrust: () => true });
+  const h = await running({ dataDir: dir, lineRequest: request });
   try {
     await h.gateway.contacts.search('', true); await h.gateway.contacts.setAlias('simon', chatId);
     const paired = await h.gateway.pairing.exchange(payload(h.gateway.pairing));
@@ -216,7 +216,7 @@ test('real API text/image contract, UNKNOWN deduplication, alias validation and 
     h.gateway.sessions.mark('EXPIRED', 'mock expiry');
     assert.equal((await postText({ who: 'simon', message: 'expired' })).status, 409);
     assert.equal(textPosts, 2);
-    await assert.rejects(readFile(join(dir, 'contacts.json')), { code: 'ENOENT' });
+    assert.equal(JSON.parse(await readFile(join(dir, 'contacts.json'), 'utf8')).contacts[0].chatId, chatId);
   } finally { await h.close(); }
 });
 
@@ -258,7 +258,7 @@ test('Supervisor HTTP client authenticates with header only and rejects redirect
 });
 
 test('LINE logout requires CSRF, retains pairing and aliases, and clears only LINE state', async () => {
-  const h = await running({ ingressTrust: () => true, lineRequest: async () => ({ status: 200, contentType: 'application/json', body: { list: [] } }) });
+  const h = await running({ lineRequest: async () => ({ status: 200, contentType: 'application/json', body: { list: [] } }) });
   try {
     const headers = await browserSession(h.ui);
     await h.gateway.sessions.importCredentials({ version: 1, botId: 'U' + 'a'.repeat(32), importedAt: new Date().toISOString(), cookies: [{ name: '__Host-chat-ses', value: secret() }] });
@@ -286,7 +286,7 @@ test('logout refuses while a submitted send is still waiting for the upstream re
   const waiting = new Promise<void>(resolve => { started = resolve; });
   const pending = new Promise<void>(resolve => { unblock = resolve; });
   const chatId = 'U' + 'b'.repeat(32);
-  const h = await running({ ingressTrust: () => true, lineRequest: async (_method, path) => {
+  const h = await running({ lineRequest: async (_method, path) => {
     if (path === '/api/v1/csrfToken') return { status: 200, contentType: 'application/json', body: { token: secret() } };
     if (path.includes('/contacts?')) return { status: 200, contentType: 'application/json', body: { list: [{ contactId: chatId, profile: { name: 'Mock' } }] } };
     started(); await pending; return { status: 200, contentType: 'application/json', body: {} };
@@ -308,7 +308,7 @@ test('logout refuses while a submitted send is still waiting for the upstream re
 test('revoking __proto__ through the UI blocks text and image API sends with the same valid key', async () => {
   let posts = 0;
   const chatId = `U${'b'.repeat(32)}`;
-  const h = await running({ ingressTrust: () => true, lineRequest: async (method, path) => {
+  const h = await running({ lineRequest: async (method, path) => {
     if (method === 'POST') posts++;
     return { status: 200, contentType: 'application/json', body: path.includes('csrfToken') ? { token: secret() }
       : path.includes('/contacts?') ? { list: [{ contactId: chatId, profile: { name: 'Synthetic friend' } }] } : {} };

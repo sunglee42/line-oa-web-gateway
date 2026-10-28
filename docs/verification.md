@@ -2,7 +2,13 @@
 
 ## 自動測試
 
-0.1.9 包含 78 項 Mock 測試，已在本機 Node.js 26 通過 TypeScript strict 與完整測試。Node.js 24 的 amd64／aarch64 原生建置與 smoke 結果以對應提交的 [GitHub Actions](https://github.com/xangin/line-oa-ha-addon/actions) 紀錄為準。測試涵蓋：
+0.1.12 已在本機通過 **104 項測試**與 TypeScript strict，排程修正增加發送閒置期限、隨機延遲範圍、持續發送、等待中檢查競態與實際文字／圖片 API 的回歸測試；沿用已驗證的聯絡人保存、登入紀錄及停用設定。
+
+0.1.11 已在本機通過 **96 項測試**與 TypeScript strict：新增聯絡人持久化／帳號隔離／登出競態、分鐘設定與即時停用、0 模式僅發送失敗觸發恢復，以及自動登入紀錄的來源、時間、容量、遮蔽與重啟保留。Chrome 另以合成帳號檢查設定儲存／重新載入、聯絡人顯示及獨立紀錄分頁；未向真實 LINE 收件者發訊；正式 HA 的更新驗證另行執行。
+
+0.1.10 已在本機通過 90 項測試，包括文字／圖片 FIFO、等待中的重複請求 ID、容量與等待上限、斷線取消、停止服務、帳號／別名變更，以及舊版每分鐘 5 則設定的遷移與超過 5 筆的 API 併發發送。LINE 端使用合成回應，沒有向真實收件者發訊。
+
+0.1.10 包含 90 項 Mock 測試，已在本機 Node.js 26 通過 TypeScript strict 與完整測試。Node.js 24 的 amd64／aarch64 原生建置與 smoke 結果以對應提交的 [GitHub Actions](https://github.com/xangin/line-oa-ha-addon/actions) 紀錄為準。測試涵蓋：
 
 - 探索、短效配對、過期／錯誤／已用秘密、互斥、撤銷與損壞資料拒絕。
 - Ingress 來源、相對靜態資源、CSRF／Origin、Web Session 與 LINE 登出。
